@@ -1,0 +1,7 @@
+cache/*
+*/__pycache__/*
+.nfs*
+src/BFS/__pycache__/*
+wandb
+src/eval_video.gif
+src/eval_video.mp4

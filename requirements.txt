@@ -1,0 +1,5 @@
+networkx==2.6.3
+ipdb==0.13.9
+tensorflow==2.8.0
+osmnx==1.1.2
+ale-py==0.7.4
