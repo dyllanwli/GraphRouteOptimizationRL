@@ -1,21 +1,31 @@
-from collections import defaultdict
+# from collections import defaultdict
 from typing import Tuple
 
 import numpy as np
+import networkx as nx
 
 import osmnx as ox
 from osmnx import distance
+
+import matplotlib.pyplot as plt
 
 import gym
 from gym import error, spaces, utils
 from gym.utils import seeding
 
-import networkx as nx
-from soupsieve import closest
+INF = 100000000
 
-def set_neg_weights(G, df):
-    return ox.distance.nearest_nodes(
-        G, X=df.loc[0, "Longitude"], Y=df.loc[0, "Latitude"])
+class MaskedDiscreteAction(spaces.Discrete):
+    def __init__(self, n):
+        super().__init__(n)
+        self.neighbors = None
+
+    def super_sample(self):
+        return super().sample()
+        
+    def sample(self):
+        # The type need to be the same as Discrete
+        return int(np.random.choice(self.neighbors))
 
 
 class GraphMapEnv(gym.Env):
@@ -24,104 +34,123 @@ class GraphMapEnv(gym.Env):
     """
     metadata = {'render.modes': ['human']}
 
-    def __init__(self, networkx_graph: nx.MultiDiGraph, origin, goal, neg_df, center_node: Tuple, verbose=False) -> None:
+    def __init__(self, networkx_graph: nx.MultiDiGraph, neg_df, origin: int = None, goal: int = None, center_node: Tuple = (29.764050, -95.393030), verbose=False) -> None:
         """
         Initializes the environment
         origin: the origin node (151820557)
         goal: the goal node (151820557)
         neg_weights: name of negative weights
+        center_node: the center node (29.764050, -95.393030)
         """
         super(gym.Env, self).__init__()
         self.graph = networkx_graph
         self.origin = origin
         self.goal = goal
         self.verbose = verbose
-        self.neg_points = self.get_neg_points(neg_df, center_node)
+        self.threshold = 2000.0  # graph radius or negative weight threshold
+        self.neg_points = self._get_neg_points(neg_df, center_node)
+        if self.neg_points == []:
+            raise ValueError("Negative weights not found")
         self.avoid_threshold = 500.0
-        self.ep_length = self.graph.number_of_nodes() * 2
+        self.EP_LENGTH = self.graph.number_of_nodes()
         # Constant values
 
-        self.seed()
-        self.reset(networkx_graph, origin, goal)
+        # utility values
+        self.render_img_path = "./render_img.png"
+
+        # utility functions for reward computation
+        self.sigmoid = lambda x: 1 / (1 + np.exp(-x/self.threshold))
+
+        self.seed(1)
+        self._reindex_graph(self.graph)
+        self.reset()
         # Reset the environment
 
-    def reindex_graph(self, graph):
+        print("EP_LENGTH:", self.EP_LENGTH)
+        print("origin:", self.origin)
+        print("goal:", self.goal)
+        print("num of neg_points:", len(self.neg_points))
+        print("action_space:", self.action_space)
+        print("shorest path:", self.nx_shortest_path_length)
+        print("shortest travel time:", self.nx_shortest_travel_time_length)
+
+    def _reindex_graph(self, graph):
         """
         Reindexes the graph
+        node_dict: {151820557: 0}
+        node_dict_reversed: {0: 151820557}
         """
         self.reindexed_graph = nx.relabel.convert_node_labels_to_integers(
             graph, first_label=0, ordering='default')
 
         self.node_dict = {node: i for i,
                           node in enumerate(graph.nodes(data=False))}
-        # node_dict: {151820557: 0}
 
         self.node_dict_reversed = {
             i: node for node, i in self.node_dict.items()}
-        # node_dict_reversed: {0: 151820557}
 
         self.nodes = self.reindexed_graph.nodes()
 
-    def reset(self):
-        """
-        Resets the environment
-        """
-        self.reindex_graph(self.graph)
-        self.current = self.node_dict[self.origin]
-        self.current_step = 0
-        self.done = False
-        # Reset values
-
-        self.adj_shape = self.graph.number_of_nodes()
-
-        self.action_space = spaces.Discrete(
-            self.reindexed_graph.number_of_nodes())
-
-        self.observation_space = spaces.Dict({
-            "current": spaces.Discrete(self.reindexed_graph.number_of_nodes()),
-            "adj": spaces.Box(low=0, high=1, shape=(self.adj_shape, self.adj_shape), dtype=np.float32),
-            "length": spaces.Box(low=0, high=float("inf"), shape=(self.adj_shape, self.adj_shape), dtype=np.float32),
-            "speed_kph": spaces.Box(low=0, high=120, shape=(self.adj_shape, self.adj_shape), dtype=np.float32),
-            "travel_time": spaces.Box(low=0, high=float("inf"), shape=(self.adj_shape, self.adj_shape), dtype=np.float32),
-        })
-        self._update_state()
-        return self.state
-
-    def action_mask(self):
-        """
-        Computes the action mask
-        Returns:
-            action_mask: [1, 0, ...]
-        """
-        neighbors = self.reindexed_graph.neighbors(self.current)
-        mask = np.isin(self.reindexed_graph.nodes(), neighbors,
-                       assume_unique=True).astype(int)
-        return mask
-
-    # @property
-    # def action_space(self):
-    #   return self.graph.neighbors(self.current)
-
     def _update_state(self):
-        self.state = spaces.Dict({
-            "current": self.current,
-            "adj": nx.adjacency_matrix(self.reindexed_graph, weight=None),
-            "length": nx.adjacency_matrix(self.reindexed_graph, weight="length"),
-            "speed_kph": nx.adjacency_matrix(self.reindexed_graph, weight="speed_kph"),
-            "travel_time": nx.adjacency_matrix(self.reindexed_graph, weight="travel_time"),
-        })
+        """
+        Updates the state
+        TODO: update dynamical state here
+        """
+        self.state['current'] = self.current
+        self.neighbors = list(self.reindexed_graph.neighbors(self.current))
+        self.action_space.neighbors = self.neighbors
 
-    def step(self, action):
+    def _reward(self):
         """
-        Executes one time step within the environment
+        Computes the reward
+        neg_factor range: [-inf, 1.0] the closer to the negative point, the less the overall reward
+        r1 range: [0, 1.0] the more the steps, the less the r1, this effect will be even more stronger when the steps are close to EP_LENGTH
+        r2 range: {0.0, 1.0} if reached the goal, the r2 is 1.0 else 0.0
+        r3 range: [-1.0, inf] if reached the goal, the r3 will caculate the path length compared to the nx_shortest_path_length, 
+            if the path length is equal to the nx_shortest_path_length, the r3 will be 1.0
+            then the smaller the path length, the larger the r3 even to to infinity
+            if the path length is larger than the nx_shortest_path_length, the r3 will be -1.0 at most
+        TODO: add r4
+        r5 range: [0, 1.0] the closer to the goal the higher the r5 for each step
         """
-        self.current = action
-        self.current_step += 1
-        self.reward = self._reward()
-        self._update_state()
-        if self.current == self.node_dict[self.goal] or self.current_step >= self.ep_length:
-            self.done = True
-        return self.state, self.reward, self.done, {"current_step": self.current_step}
+        current_node = self.nodes[self.current]
+        neg_factor = 1.0
+        closest_dist = self.avoid_threshold
+        for node in self.neg_points:
+            dist = self._great_circle_vec(current_node, node)
+            if dist <= self.avoid_threshold:
+                closest_dist = min(closest_dist, dist)
+        # too close to a negative point will cause a negative reward
+        neg_factor = max(-INF, 1 + np.log(closest_dist / self.avoid_threshold))
+        r1 = np.log(- self.current_step + self.EP_LENGTH + 1) - 2
+        r2 = 1.0 if self.state['current'] == self.goal else 0.0
+        r3 = min(
+            INF, -r2*(np.log(self.path_length / self.nx_shortest_path_length)+1))
+        # r4 = np.log2(- (self.travel_time /
+        #              self.nx_shortest_travel_time_length) + 2) + 1
+        r5 = self.sigmoid(self._great_circle_vec(current_node, self.goal_node))
+        r = np.mean([r1, r2, r3, r5]) * neg_factor
+        return r
+
+    def _get_neg_points(self, df, center_node):
+        """
+        Computes the negative weights
+        Inputs: 
+            df: pandas dataframe with the following columns: ['Latitude', 'Longitude', 'neg_weights', ...]
+            center_node: (29.764050, -95.393030) # buffalo bayou park
+            threshold: the threshold for the negative weights (meters)
+        Returns:
+            neg_nodes: {'x': Latitude, 'y': Longitude, 'weight': neg_weights}
+        """
+        neg_nodes = []
+        center_node = {'x': center_node[0], 'y': center_node[1]}
+        for row in df.values:
+            node = {'x': row[0], 'y': row[1], 'weight': row[2]}
+            dist = self._great_circle_vec(center_node, node)
+            # caculate the distance between the node and the center node
+            if dist <= self.threshold:
+                neg_nodes.append(node)
+        return neg_nodes
 
     def _great_circle_vec(self, node1, node2):
         """
@@ -132,33 +161,147 @@ class GraphMapEnv(gym.Env):
         Returns:
             distance: float (meters)
         """
-        x1, y1 = node1
-        x2, y2 = node2
+        x1, y1 = node1['x'], node1['y']
+        x2, y2 = node2['x'], node2['y']
         return distance.great_circle_vec(x1, y1, x2, y2)
 
-    def _reward(self):
+    def _update_path_length(self):
         """
-        Computes the reward
-        neg_factor range: [-inf, 1.0]
+        Updates the path length
         """
-        current_node = (self.nodes[self.current]['y'], self.nodes[self.current]['x'])
-        neg_factor = 1.0
-        closest_dist = 0.0
-        for node in self.neg_points:
-            dist = self._great_circle_vec(current_node, node)
-            if dist <= self.avoid_threshold:
-                closest_dist = min(closest_dist, dist)
-        # too close to a negative point will cause a negative reward
-        neg_factor = 1 + np.log(closest_dist / self.avoid_threshold)
+        self.path_length += ox.utils_graph.get_route_edge_attributes(
+            self.reindexed_graph, self.path[-2:], "length")[0]
 
-        return neg_factor * (1 - 0.9 * 1)
+    def _update_travel_time(self):
+        """
+        Updates the travel time
+        """
+        self.travel_time += ox.utils_graph.get_route_edge_attributes(
+            self.reindexed_graph, self.path[-2:], "travel_time")[0]
+
+    def _get_default_route(self):
+        """
+        Set the default route by tratitional method
+        """
+        try: 
+            self.nx_shortest_path = nx.shortest_path(
+                self.reindexed_graph, source=self.origin, target=self.goal, weight="length")
+            self.nx_shortest_path_length = sum(ox.utils_graph.get_route_edge_attributes(
+                self.reindexed_graph, self.nx_shortest_path, "length"))
+
+            self.nx_shortest_travel_time = nx.shortest_path(
+                self.reindexed_graph, source=self.origin, target=self.goal, weight="travel_time")
+            self.nx_shortest_travel_time_length = sum(ox.utils_graph.get_route_edge_attributes(
+                self.reindexed_graph, self.nx_shortest_travel_time, "travel_time"))
+        except nx.exception.NetworkXNoPath:
+            print("No path found for default route. Restting...")
+            self.reset()
+
+    def reset(self):
+        """
+        Resets the environment
+        """
+        self.num_nodes = self.reindexed_graph.number_of_nodes()
+        self.adj_shape = (self.num_nodes, self.num_nodes)
+        self.action_space = MaskedDiscreteAction(
+            self.num_nodes,)
+
+        self.observation_space = spaces.Dict({
+            "current": spaces.Discrete(self.reindexed_graph.number_of_nodes()),
+            "adj": spaces.Box(low=0, high=float("inf"), shape=self.adj_shape, dtype=np.float32),
+            "length": spaces.Box(low=0, high=float("inf"), shape=self.adj_shape, dtype=np.float32),
+            "speed_kph": spaces.Box(low=0, high=float("inf"), shape=self.adj_shape, dtype=np.float32),
+            "travel_time": spaces.Box(low=0, high=float("inf"), shape=self.adj_shape, dtype=np.float32),
+        })
+
+        if self.origin is None:
+            self.origin = self.action_space.super_sample()
+        if self.goal is None:
+            self.goal = self.action_space.super_sample()
+            self.goal_node = self.nodes[self.goal]
+
+        self.current = self.origin
+        self.current_step = 0
+        self.done = False
+        self.path = [self.current]
+        self.path_length = 0.0
+        self.travel_time = 0.0
+        self.info = {}
+
+        self.state = {
+            "current": self.current,
+            "adj": nx.to_numpy_array(self.reindexed_graph, weight="None", dtype=np.float32),
+            "length": nx.to_numpy_array(self.reindexed_graph, weight="length", dtype=np.float32),
+            "speed_kph": nx.to_numpy_array(self.reindexed_graph, weight="speed_kph", dtype=np.float32),
+            "travel_time": nx.to_numpy_array(self.reindexed_graph, weight="travel_time", dtype=np.float32),
+        }
+
+        self._update_state()
+        if self.neighbors == []:
+            # make sure the first step is not a dead end node
+            self.reset()
+        self._get_default_route()
+        return self.state
+
+    def action_masks(self):
+        """
+        Computes the action mask
+        Returns:
+            action_mask: [1, 0, ...]
+        """
+        self.mask = np.isin(self.nodes, self.neighbors,
+                            assume_unique=True).astype(int)
+        return self.mask
+
+    # @property
+    # def action_space(self):
+    #   return self.graph.neighbors(self.current)
+
+    def step(self, action):
+        """
+        Executes one time step within the environment
+        self.current: the current node
+        self.current_step: the current step
+        self.done: whether the episode is done:
+            True: the episode is done OR the current node is the goal node OR the current node is a dead end node
+        self.state: the current state
+        self.reward: the reward
+        Returns:
+            self.state: the next state
+            self.reward: the reward
+            self.done: whether the episode is done
+            self.info: the information
+        """
+        self.current = action
+        self.current_step += 1
+        self.path.append(self.current)
+
+        self._update_state()
+        if self.current == self.goal or self.current_step >= self.EP_LENGTH or self.neighbors == []:
+            self.done = True
+        self._update_path_length()
+        self._update_travel_time()
+        self.reward = self._reward()
+        return self.state, self.reward, self.done, self.info
 
     def render(self, mode='human', close=False):
         """
         Renders the environment
         """
-        fig, ax = ox.plot_graph_route(self.graph.ngraph, self.graph.path)
-        return np.array(fig.canvas.buffer_rgba())
+        if self.verbose:
+            print("Get path", self.path)
+        fig, ax = ox.plot_graph_route(
+            self.reindexed_graph, self.path, save=True, filepath=self.render_img_path)
+        if mode == 'human':
+            pass
+        else:
+            return np.array(fig.canvas.buffer_rgba())
+
+    def action_space_sample(self):
+        """
+        Samples an action from the action space
+        """
+        return np.random.choice(self.neighbors)
 
     def seed(self, seed=None):
         """
@@ -169,27 +312,3 @@ class GraphMapEnv(gym.Env):
 
     def close(self) -> None:
         return super().close()
-
-    def get_neg_points(self, df, center_node, threshold = 2000.0):
-        """
-        Computes the negative weights
-        Inputs: 
-            df: pandas dataframe with the following columns: ['Longitude', 'Latitude', 'neg_weights', ...]
-            center_node: (29.764050, -95.393030) # buffalo bayou park
-            threshold: the threshold for the negative weights (meters)
-        Returns:
-            neg_weights: {(Longitude, Longitude): weight}
-        """
-        neg_list = defaultdict(float)
-        for x in df.values:
-            neg_list[(x[0], x[1])] = x[2]
-        neg_nodes = []
-
-        for node in neg_list.keys():
-            # caculate the distance between the node and the center node
-            dist = self._great_circle_vec(node, center_node)
-            if dist < threshold:
-                neg_nodes.append(node)
-
-        return neg_nodes
-

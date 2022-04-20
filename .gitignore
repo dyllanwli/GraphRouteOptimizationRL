@@ -6,3 +6,5 @@ wandb
 src/eval_video.gif
 src/eval_video.mp4
 src/routegym/__pycache__/*
+src/gym_graph_map/__pycache__/*
+src/gym_graph_map/envs/__pycache__/*
