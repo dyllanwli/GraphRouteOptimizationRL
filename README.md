@@ -1,5 +1,8 @@
 # GraphRouteOptimizationRL
 
+
+# Usage
+- Check `/src/gym_graph_map` to use our osmnx openai gym environment 
 # References:
 + https://heartbeat.comet.ml/introduction-to-reinforcement-learning-a91beec7f830
 + https://heartbeat.comet.ml/automating-an-ai-to-find-the-shortest-route-using-reinforcement-learning-19dc9a3c0411

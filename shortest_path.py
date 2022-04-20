@@ -1,4 +1,4 @@
-import string
+from pathlib import Path
 import random
 import imageio
 import matplotlib.pyplot as plt
@@ -342,7 +342,8 @@ if __name__ == '__main__':
     origin_point = center_point
     destination_point = (29.714630473243457, -95.37716122309068) # lat long
     # get the nearest nodes to the locations 
-    G = ox.load_graphml("/h/diya.li/dev/GraphRouteOptimizationRL/houston_tx_usa_drive_500.graphml")
+    path = Path("~/dev/GraphRouteOptimizationRL/houston_tx_usa_drive_500.graphml").expanduser()
+    G = ox.load_graphml(path)
 
     origin_node, origin_node_error = ox.distance.nearest_nodes(G, X = origin_point[1], Y = origin_point[0], return_dist = True)
     destination_node, destination_node_error = ox.distance.nearest_nodes(G, X = destination_point[1], Y = destination_point[0], return_dist = True)

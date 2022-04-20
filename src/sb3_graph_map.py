@@ -1,3 +1,5 @@
+from pathlib import Path
+import osmnx as ox
 import pandas as pd
 
 from sb3_contrib import MaskablePPO
@@ -13,33 +15,34 @@ import torch
 
 torch.cuda.empty_cache()
 
-import osmnx as ox
 
 def train(env):
     # Train the agent
-    wandb.init(project="rl_osmnx",group="maskable_ppo")
+    run = wandb.init(project="rl_osmnx", sync_tensorboard=False)
 
-    model = MaskablePPO("MultiInputPolicy", env, gamma=0.99, seed=32, batch_size = 64, verbose=1)
-    model.learn(5000, callback=WandbCallback(verbose=2))
+    model = MaskablePPO("MultiInputPolicy", env, gamma=0.99, seed=40,
+                        batch_size=256, verbose=1, tensorboard_log=f"runs/{run.id}")
+    model.learn(10000, callback=WandbCallback(verbose=1))
 
-    evaluate_policy(model, env, n_eval_episodes=20, reward_threshold=2, warn=False)
+    evaluate_policy(model, env, n_eval_episodes=20,
+                    reward_threshold=10, warn=False)
 
     model.save("ppo_mask")
-    del model # remove to demonstrate saving and loading
+    del model  # remove to demonstrate saving and loading
 
     model = MaskablePPO.load("ppo_mask")
+    run.finish()
 
     return model
 
-
 def main():
-    graph_path = "/h/diya.li/dev/GraphRouteOptimizationRL/houston_tx_usa_drive_2000.graphml"
-    neg_df_path = "/h/diya.li/dev/GraphRouteOptimizationRL/datasets/tx_flood.csv"
+    graph_path = str(Path.home()) + "/dev/GraphRouteOptimizationRL/houston_tx_usa_drive_2000.graphml"
+    neg_df_path = str(Path.home()) + "/dev/GraphRouteOptimizationRL/datasets/tx_flood.csv"
     G = ox.load_graphml(graph_path)
     print("Loaded graph")
     neg_df = pd.read_csv(neg_df_path)
     center_node = (29.764050, -95.393030)
-    env = GraphMapEnv(G, neg_df, center_node=center_node ,verbose=False)
+    env = GraphMapEnv(G, neg_df, center_node=center_node, verbose=False)
 
     # check_env(env)
 
@@ -56,9 +59,10 @@ def main():
         # print(env.render())
         if done:
             break
-        
+
     print("final reward:", rewards)
     env.render(mode="human")
+
 
 if __name__ == "__main__":
     main()

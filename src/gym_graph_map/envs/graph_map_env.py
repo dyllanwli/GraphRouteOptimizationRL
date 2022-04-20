@@ -15,6 +15,7 @@ from gym.utils import seeding
 
 INF = 100000000
 
+
 class MaskedDiscreteAction(spaces.Discrete):
     def __init__(self, n):
         super().__init__(n)
@@ -22,7 +23,7 @@ class MaskedDiscreteAction(spaces.Discrete):
 
     def super_sample(self):
         return super().sample()
-        
+
     def sample(self):
         # The type need to be the same as Discrete
         return int(np.random.choice(self.neighbors))
@@ -34,7 +35,7 @@ class GraphMapEnv(gym.Env):
     """
     metadata = {'render.modes': ['human']}
 
-    def __init__(self, networkx_graph: nx.MultiDiGraph, neg_df, origin: int = None, goal: int = None, center_node: Tuple = (29.764050, -95.393030), verbose=False) -> None:
+    def __init__(self, networkx_graph: nx.MultiDiGraph, neg_df, center_node: Tuple = (29.764050, -95.393030), verbose=False) -> None:
         """
         Initializes the environment
         origin: the origin node (151820557)
@@ -44,22 +45,20 @@ class GraphMapEnv(gym.Env):
         """
         super(gym.Env, self).__init__()
         self.graph = networkx_graph
-        self.origin = origin
-        self.goal = goal
         self.verbose = verbose
         self.threshold = 2000.0  # graph radius or negative weight threshold
         self.neg_points = self._get_neg_points(neg_df, center_node)
         if self.neg_points == []:
             raise ValueError("Negative weights not found")
         self.avoid_threshold = 500.0
+        self.number_of_nodes = self.graph.number_of_nodes()
         self.EP_LENGTH = self.graph.number_of_nodes()
         # Constant values
 
         # utility values
         self.render_img_path = "./render_img.png"
 
-        # utility functions for reward computation
-        self.sigmoid = lambda x: 1 / (1 + np.exp(-x/self.threshold))
+        self._set_utility_function()
 
         self.seed(1)
         self._reindex_graph(self.graph)
@@ -71,8 +70,17 @@ class GraphMapEnv(gym.Env):
         print("goal:", self.goal)
         print("num of neg_points:", len(self.neg_points))
         print("action_space:", self.action_space)
-        print("shorest path:", self.nx_shortest_path_length)
-        print("shortest travel time:", self.nx_shortest_travel_time_length)
+    
+    def _set_utility_function(self):
+        """
+        Sets the utility function
+        """
+        parameters = "%e" % self.threshold
+        sp = parameters.split("e")
+        a = -float(sp[0])
+        b = 10**(-float(sp[1]))
+        self.sigmoid1 = lambda x: 1 / (1 + np.exp(-x/self.threshold))
+        self.sigmoid2 = lambda x, a=a, b=b: 1 / (1 + np.exp(a + b * x))
 
     def _reindex_graph(self, graph):
         """
@@ -106,10 +114,8 @@ class GraphMapEnv(gym.Env):
         neg_factor range: [-inf, 1.0] the closer to the negative point, the less the overall reward
         r1 range: [0, 1.0] the more the steps, the less the r1, this effect will be even more stronger when the steps are close to EP_LENGTH
         r2 range: {0.0, 1.0} if reached the goal, the r2 is 1.0 else 0.0
-        r3 range: [-1.0, inf] if reached the goal, the r3 will caculate the path length compared to the nx_shortest_path_length, 
-            if the path length is equal to the nx_shortest_path_length, the r3 will be 1.0
-            then the smaller the path length, the larger the r3 even to to infinity
-            if the path length is larger than the nx_shortest_path_length, the r3 will be -1.0 at most
+        r3 range: [0.0, 1.0] if reached the goal, the r3 will caculate the path length with sigmoid function, 
+            the sigmod funtion is constructed by the self.threshold, if the path length is less than the threshold, the r3 is less than 0.5 else greater than 0.5
         TODO: add r4
         r5 range: [0, 1.0] the closer to the goal the higher the r5 for each step
         """
@@ -124,11 +130,11 @@ class GraphMapEnv(gym.Env):
         neg_factor = max(-INF, 1 + np.log(closest_dist / self.avoid_threshold))
         r1 = np.log(- self.current_step + self.EP_LENGTH + 1) - 2
         r2 = 1.0 if self.state['current'] == self.goal else 0.0
-        r3 = min(
-            INF, -r2*(np.log(self.path_length / self.nx_shortest_path_length)+1))
+        r3 = r2 * self.sigmoid2(self.path_length)
+        
         # r4 = np.log2(- (self.travel_time /
         #              self.nx_shortest_travel_time_length) + 2) + 1
-        r5 = self.sigmoid(self._great_circle_vec(current_node, self.goal_node))
+        r5 = self.sigmoid1(self._great_circle_vec(current_node, self.goal_node))
         r = np.mean([r1, r2, r3, r5]) * neg_factor
         return r
 
@@ -179,11 +185,11 @@ class GraphMapEnv(gym.Env):
         self.travel_time += ox.utils_graph.get_route_edge_attributes(
             self.reindexed_graph, self.path[-2:], "travel_time")[0]
 
-    def _get_default_route(self):
+    def get_default_route(self):
         """
         Set the default route by tratitional method
         """
-        try: 
+        try:
             self.nx_shortest_path = nx.shortest_path(
                 self.reindexed_graph, source=self.origin, target=self.goal, weight="length")
             self.nx_shortest_path_length = sum(ox.utils_graph.get_route_edge_attributes(
@@ -201,24 +207,22 @@ class GraphMapEnv(gym.Env):
         """
         Resets the environment
         """
-        self.num_nodes = self.reindexed_graph.number_of_nodes()
-        self.adj_shape = (self.num_nodes, self.num_nodes)
+        
+        self.adj_shape = (self.number_of_nodes, self.number_of_nodes)
         self.action_space = MaskedDiscreteAction(
-            self.num_nodes,)
+            self.number_of_nodes,)
 
         self.observation_space = spaces.Dict({
-            "current": spaces.Discrete(self.reindexed_graph.number_of_nodes()),
+            "current": spaces.Discrete(self.number_of_nodes),
             "adj": spaces.Box(low=0, high=float("inf"), shape=self.adj_shape, dtype=np.float32),
-            "length": spaces.Box(low=0, high=float("inf"), shape=self.adj_shape, dtype=np.float32),
-            "speed_kph": spaces.Box(low=0, high=float("inf"), shape=self.adj_shape, dtype=np.float32),
-            "travel_time": spaces.Box(low=0, high=float("inf"), shape=self.adj_shape, dtype=np.float32),
+            # "length": spaces.Box(low=0, high=float("inf"), shape=self.adj_shape, dtype=np.float32),
+            # "speed_kph": spaces.Box(low=0, high=float("inf"), shape=self.adj_shape, dtype=np.float32),
+            # "travel_time": spaces.Box(low=0, high=float("inf"), shape=self.adj_shape, dtype=np.float32),
         })
 
-        if self.origin is None:
-            self.origin = self.action_space.super_sample()
-        if self.goal is None:
-            self.goal = self.action_space.super_sample()
-            self.goal_node = self.nodes[self.goal]
+        self.origin = self.action_space.super_sample()
+        self.goal = self.action_space.super_sample()
+        self.goal_node = self.nodes[self.goal]
 
         self.current = self.origin
         self.current_step = 0
@@ -231,16 +235,15 @@ class GraphMapEnv(gym.Env):
         self.state = {
             "current": self.current,
             "adj": nx.to_numpy_array(self.reindexed_graph, weight="None", dtype=np.float32),
-            "length": nx.to_numpy_array(self.reindexed_graph, weight="length", dtype=np.float32),
-            "speed_kph": nx.to_numpy_array(self.reindexed_graph, weight="speed_kph", dtype=np.float32),
-            "travel_time": nx.to_numpy_array(self.reindexed_graph, weight="travel_time", dtype=np.float32),
+            # "length": nx.to_numpy_array(self.reindexed_graph, weight="length", dtype=np.float32),
+            # "speed_kph": nx.to_numpy_array(self.reindexed_graph, weight="speed_kph", dtype=np.float32),
+            # "travel_time": nx.to_numpy_array(self.reindexed_graph, weight="travel_time", dtype=np.float32),
         }
 
         self._update_state()
         if self.neighbors == []:
             # make sure the first step is not a dead end node
             self.reset()
-        self._get_default_route()
         return self.state
 
     def action_masks(self):
@@ -284,14 +287,19 @@ class GraphMapEnv(gym.Env):
         self.reward = self._reward()
         return self.state, self.reward, self.done, self.info
 
-    def render(self, mode='human', close=False):
+    def render(self, mode='human', default_path=None, plot_learned=True, save=True):
         """
         Renders the environment
         """
         if self.verbose:
             print("Get path", self.path)
-        fig, ax = ox.plot_graph_route(
-            self.reindexed_graph, self.path, save=True, filepath=self.render_img_path)
+        if default_path is not None:
+            ox.plot_graph_route(self.reindexed_graph, default_path,
+                                                    save=save, filepath="./default_image.png")
+        if plot_learned:
+            fig, ax = ox.plot_graph_route(
+                self.reindexed_graph, self.path, save=save, filepath=self.render_img_path)
+
         if mode == 'human':
             pass
         else:

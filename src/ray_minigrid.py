@@ -1,3 +1,4 @@
+from pathlib import Path
 from collections import deque
 import gym
 import gym_minigrid
@@ -181,13 +182,13 @@ def test_curiosity_on_partially_observable_domain(train=True):
         "training_iteration": 50,
         "episode_reward_mean": episode_reward_mean,
     }
-    checkpoint_path = "/h/diya.li/ray_sync/PPO/PPO_mini-grid_cdc9a_00000_0_2022-04-04_13-19-45/checkpoint_000011/checkpoint-11"
+    checkpoint_path = str(Path.home()) + "/ray_sync/PPO/PPO_mini-grid_cdc9a_00000_0_2022-04-04_13-19-45/checkpoint_000011/checkpoint-11"
     if train:
         analysis = tune.run("PPO",
                             config=config,
                             stop=stop,
                             verbose=0,
-                            local_dir="~/ray_sync",
+                            local_dir= str(Path.home()) + "/ray_sync",
 
                             # checkpoints mode-metric
                             # checkpoint_score_attr="max-episode_reward_mean",
