@@ -20,14 +20,14 @@ neighbors = []
 
 def train(env):
     # Train the agent
-    run = wandb.init(project="rl_osmnx", sync_tensorboard=False)
+    run = wandb.init(project="rl_osmnx", group="ppo_mask", sync_tensorboard=True)
 
     model = MaskablePPO("MultiInputPolicy", env, gamma=0.99, seed=40,
                         batch_size=256, verbose=1, tensorboard_log=f"runs/{run.id}")
-    model.learn(10000, callback=WandbCallback(verbose=1))
+    model.learn(5000, callback=WandbCallback(verbose=1))
 
     evaluate_policy(model, env, n_eval_episodes=20,
-                    reward_threshold=10, warn=False)
+                    reward_threshold=2, warn=False)
 
     model.save("ppo_mask")
     del model  # remove to demonstrate saving and loading

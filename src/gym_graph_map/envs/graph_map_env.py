@@ -57,7 +57,7 @@ class GraphMapEnv(gym.Env):
             raise ValueError("Negative weights not found")
         self.avoid_threshold = self.threshold / 4
         self.number_of_nodes = self.graph.number_of_nodes()
-        self.EP_LENGTH = self.graph.number_of_nodes()
+        self.EP_LENGTH = 100
         # Constant values
 
         # utility values
