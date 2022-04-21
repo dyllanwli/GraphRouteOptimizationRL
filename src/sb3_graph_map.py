@@ -5,9 +5,9 @@ import pandas as pd
 from sb3_contrib import MaskablePPO
 from sb3_contrib.common.envs import InvalidActionEnvDiscrete
 from gym_graph_map.envs import GraphMapEnv
+from env_checker import check_env
 from sb3_contrib.common.maskable.evaluation import evaluate_policy
 from sb3_contrib.common.maskable.utils import get_action_masks
-from stable_baselines3.common.env_checker import check_env
 from wandb.integration.sb3 import WandbCallback
 import wandb
 
@@ -15,6 +15,8 @@ import torch
 
 torch.cuda.empty_cache()
 
+neighbors = []
+# use neighbors as global variable 
 
 def train(env):
     # Train the agent
@@ -36,15 +38,17 @@ def train(env):
     return model
 
 def main():
-    graph_path = str(Path.home()) + "/dev/GraphRouteOptimizationRL/houston_tx_usa_drive_2000.graphml"
-    neg_df_path = str(Path.home()) + "/dev/GraphRouteOptimizationRL/datasets/tx_flood.csv"
+    home = str(Path.home())
+    graph_path = home + "/dev/GraphRouteOptimizationRL/houston_tx_usa_drive_2000.graphml"
+    neg_df_path = home + "/dev/GraphRouteOptimizationRL/datasets/tx_flood.csv"
     G = ox.load_graphml(graph_path)
     print("Loaded graph")
     neg_df = pd.read_csv(neg_df_path)
     center_node = (29.764050, -95.393030)
     env = GraphMapEnv(G, neg_df, center_node=center_node, verbose=False)
 
-    # check_env(env)
+    check_env(env)
+
 
     model = train(env)
 

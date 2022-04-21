@@ -26,7 +26,7 @@ class MaskedDiscreteAction(spaces.Discrete):
         self.neighbors = None
 
     def super_sample(self):
-        return super().sample()
+        return int(super().sample())
 
     def sample(self):
         # The type need to be the same as Discrete
@@ -112,6 +112,8 @@ class GraphMapEnv(gym.Env):
         """
         self.state['current'] = self.current
         self.neighbors = list(self.reindexed_graph.neighbors(self.current))
+        if self.verbose:
+            print(self.current, "'s neighbors: ", self.neighbors)
         self.action_space.neighbors = self.neighbors
 
     def _reward(self):
@@ -241,6 +243,7 @@ class GraphMapEnv(gym.Env):
         self.path = [self.current]
         self.path_length = 0.0
         self.travel_time = 0.0
+        self.neighbors = []
         self.info = {}
 
         self.state = {
@@ -267,10 +270,6 @@ class GraphMapEnv(gym.Env):
                             assume_unique=True).astype(int)
         return self.mask
 
-    # @property
-    # def action_space(self):
-    #   return self.graph.neighbors(self.current)
-
     def step(self, action):
         """
         Executes one time step within the environment
@@ -289,6 +288,8 @@ class GraphMapEnv(gym.Env):
         self.current = action
         self.current_step += 1
         self.path.append(self.current)
+        if self.verbose: 
+            print("self.path:", self.path)
 
         self._update_state()
         if self.current == self.goal or self.current_step >= self.EP_LENGTH or self.neighbors == []:
@@ -317,17 +318,10 @@ class GraphMapEnv(gym.Env):
                 plt.savefig(self.render_img_path)
                 plt.show()
 
-
         if mode == 'human':
             pass
         else:
             return np.array(fig.canvas.buffer_rgba())
-
-    def action_space_sample(self):
-        """
-        Samples an action from the action space
-        """
-        return np.random.choice(self.neighbors)
 
     def seed(self, seed=None):
         """
