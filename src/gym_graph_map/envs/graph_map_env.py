@@ -4,11 +4,15 @@ from typing import Tuple
 import numpy as np
 import networkx as nx
 
+# for mapping
 import osmnx as ox
 from osmnx import distance
 
+# for plotting
+import geopandas
 import matplotlib.pyplot as plt
 
+# for reinforcement learning environment
 import gym
 from gym import error, spaces, utils
 from gym.utils import seeding
@@ -46,11 +50,12 @@ class GraphMapEnv(gym.Env):
         super(gym.Env, self).__init__()
         self.graph = networkx_graph
         self.verbose = verbose
-        self.threshold = 2000.0  # graph radius or negative weight threshold
+        # graph radius or average short path in this graph, sampled by env stat
+        self.threshold = 2900
         self.neg_points = self._get_neg_points(neg_df, center_node)
         if self.neg_points == []:
             raise ValueError("Negative weights not found")
-        self.avoid_threshold = 500.0
+        self.avoid_threshold = self.threshold / 4
         self.number_of_nodes = self.graph.number_of_nodes()
         self.EP_LENGTH = self.graph.number_of_nodes()
         # Constant values
@@ -70,16 +75,17 @@ class GraphMapEnv(gym.Env):
         print("goal:", self.goal)
         print("num of neg_points:", len(self.neg_points))
         print("action_space:", self.action_space)
-    
+
     def _set_utility_function(self):
         """
         Sets the utility function
         """
+        self.sigmoid1 = lambda x: 1 / (1 + np.exp(-x/self.threshold))
+
         parameters = "%e" % self.threshold
         sp = parameters.split("e")
         a = -float(sp[0])
         b = 10**(-float(sp[1]))
-        self.sigmoid1 = lambda x: 1 / (1 + np.exp(-x/self.threshold))
         self.sigmoid2 = lambda x, a=a, b=b: 1 / (1 + np.exp(a + b * x))
 
     def _reindex_graph(self, graph):
@@ -131,10 +137,11 @@ class GraphMapEnv(gym.Env):
         r1 = np.log(- self.current_step + self.EP_LENGTH + 1) - 2
         r2 = 1.0 if self.state['current'] == self.goal else 0.0
         r3 = r2 * self.sigmoid2(self.path_length)
-        
+
         # r4 = np.log2(- (self.travel_time /
         #              self.nx_shortest_travel_time_length) + 2) + 1
-        r5 = self.sigmoid1(self._great_circle_vec(current_node, self.goal_node))
+        r5 = self.sigmoid1(self._great_circle_vec(
+            current_node, self.goal_node))
         r = np.mean([r1, r2, r3, r5]) * neg_factor
         return r
 
@@ -150,12 +157,15 @@ class GraphMapEnv(gym.Env):
         """
         neg_nodes = []
         center_node = {'x': center_node[0], 'y': center_node[1]}
-        for row in df.values:
+
+        def condition(row):
             node = {'x': row[0], 'y': row[1], 'weight': row[2]}
             dist = self._great_circle_vec(center_node, node)
             # caculate the distance between the node and the center node
             if dist <= self.threshold:
                 neg_nodes.append(node)
+                return row
+        self.df = df.apply(condition, axis=1)
         return neg_nodes
 
     def _great_circle_vec(self, node1, node2):
@@ -200,14 +210,15 @@ class GraphMapEnv(gym.Env):
             self.nx_shortest_travel_time_length = sum(ox.utils_graph.get_route_edge_attributes(
                 self.reindexed_graph, self.nx_shortest_travel_time, "travel_time"))
         except nx.exception.NetworkXNoPath:
-            print("No path found for default route. Restting...")
+            if self.verbose:
+                print("No path found for default route. Restting...")
             self.reset()
 
     def reset(self):
         """
         Resets the environment
         """
-        
+
         self.adj_shape = (self.number_of_nodes, self.number_of_nodes)
         self.action_space = MaskedDiscreteAction(
             self.number_of_nodes,)
@@ -287,7 +298,7 @@ class GraphMapEnv(gym.Env):
         self.reward = self._reward()
         return self.state, self.reward, self.done, self.info
 
-    def render(self, mode='human', default_path=None, plot_learned=True, save=True):
+    def render(self, mode='human', default_path=None, plot_learned=True, plot_neg=True, save=True):
         """
         Renders the environment
         """
@@ -295,10 +306,17 @@ class GraphMapEnv(gym.Env):
             print("Get path", self.path)
         if default_path is not None:
             ox.plot_graph_route(self.reindexed_graph, default_path,
-                                                    save=save, filepath="./default_image.png")
+                                save=save, filepath="./default_image.png")
         if plot_learned:
             fig, ax = ox.plot_graph_route(
                 self.reindexed_graph, self.path, save=save, filepath=self.render_img_path)
+            if plot_neg:
+                gdf = geopandas.GeoDataFrame(
+                    self.df, geometry=geopandas.points_from_xy(self.df.Longitude, self.df.Latitude))
+                gdf.plot(ax=ax, markersize = 1, color="blue" , alpha=1, zorder=7)
+                plt.savefig(self.render_img_path)
+                plt.show()
+
 
         if mode == 'human':
             pass

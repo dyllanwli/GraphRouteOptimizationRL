@@ -1,3 +1,8 @@
+"""
+Use this script to analysis the reward function by sampling result from nx shortest path
+The sample result of the script is saved at ~/dev/GraphRouteOptimizationRL/datasets/route_stat/df_{}.csv
+load then by using env_stat.ipynb to analysis the random sample policy
+"""
 from pathlib import Path
 from tqdm import tqdm
 import osmnx as ox
