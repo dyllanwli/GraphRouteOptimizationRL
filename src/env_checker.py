@@ -89,7 +89,7 @@ def _check_nan(env: gym.Env) -> None:
     """Check for Inf and NaN using the VecWrapper."""
     vec_env = VecCheckNan(DummyVecEnv([lambda: env]))
     for _ in range(10):
-        action = np.array([env.action_space.sample()])
+        action = np.array([env.action_space_sample()])
         _, _, _, _ = vec_env.step(action)
 
 
@@ -105,7 +105,7 @@ def _check_obs(obs: Union[tuple, dict, np.ndarray, int], observation_space: spac
 
     # The check for a GoalEnv is done by the base class
     if isinstance(observation_space, spaces.Discrete):
-        assert isinstance(obs, int), f"The observation returned by `{method_name}()` method must be an int"
+        assert isinstance(obs, np.int64), f"The observation returned by `{method_name}()` method must be an np.int64"
     elif _is_numpy_array_space(observation_space):
         assert isinstance(obs, np.ndarray), f"The observation returned by `{method_name}()` method must be a numpy array"
 
@@ -152,7 +152,7 @@ def _check_returned_values(env: gym.Env, observation_space: spaces.Space, action
         _check_obs(obs, observation_space, "reset")
 
     # Sample a random action
-    action = env.action_space.sample()
+    action = env.action_space_sample()
     data = env.step(action)
 
     assert len(data) == 4, "The `step()` method must return four values: obs, reward, done, info"
@@ -171,8 +171,8 @@ def _check_returned_values(env: gym.Env, observation_space: spaces.Space, action
     else:
         _check_obs(obs, observation_space, "step")
 
-    # We also allow int because the reward will be cast to float
-    assert isinstance(reward, (float, int)), "The reward returned by `step()` must be a float"
+    # We also allow np.int64 because the reward will be cast to float
+    assert isinstance(reward, (float, np.int64)), "The reward returned by `step()` must be a float"
     assert isinstance(done, bool), "The `done` signal must be a boolean"
     assert isinstance(info, dict), "The `info` returned by `step()` must be a python dictionary"
 

@@ -8,3 +8,5 @@ pip install pyvirtualdisplay
 pip install tf-agents[reverb]
 pip install pyglet
 pip install pygame==2.1.2
+
+pip install dgl-cu113 dglgo -f https://data.dgl.ai/wheels/repo.html
