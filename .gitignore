@@ -11,3 +11,4 @@ src/gym_graph_map/envs/__pycache__/*
 src/runs/*
 *.gif
 *.mp4
+src/ray_models/__pycache__/*

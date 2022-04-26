@@ -9,29 +9,27 @@ from gym.spaces import Box, Discrete
 import ray
 from ray import tune
 from ray.rllib.agents import ppo
-from ray.rllib.examples.env.action_mask_env import ActionMaskEnv
-from gym_graph_map.envs.graph_map_env import GraphMapEnv
+# from ray.rllib.examples.env.action_mask_env import ActionMaskEnv
+from gym_graph_map.envs.graph_map_env_v2 import GraphMapEnvV2
 # from ray_models.models import TorchActionMaskModel as Model
 from ray_models.models import ActionMaskModel as Model
 # from ray_models.action_mask_model import ActionMaskModel as Model
 from ray.tune.integration.wandb import WandbLoggerCallback
-
-from ray.tune.logger import pretty_print
 
 
 args = {
     'no_masking': False,
     'run': 'APPO',  # PPO, APPO
     'eager_tracing': False,
-    'stop_iters': 10,
-    'stop_timesteps': 1000,
-    'stop_reward': 2,
+    'stop_iters': 100,
+    'stop_timesteps': 10000,
+    'stop_reward': 200,
     'no_tune': False,
 }
 
 if __name__ == "__main__":
     # Init Ray in local mode for easier debugging.
-    ray.init(local_mode=True)
+    ray.init(include_dashboard=False)
     home = str(Path.home())
     graph_path = home + \
         "/dev/GraphRouteOptimizationRL/datasets/osmnx/houston_tx_usa_drive_2000.graphml"
@@ -40,7 +38,7 @@ if __name__ == "__main__":
     print("Loaded graph")
 
     config = {
-        "env": GraphMapEnv,
+        "env": GraphMapEnvV2,
         "env_config": {
             'graph': G,
             'verbose': False,
@@ -53,10 +51,11 @@ if __name__ == "__main__":
             # disable action masking according to CLI
             "custom_model_config": {"no_masking": args['no_masking']},
         },
+        "horizon": 100,
         "framework": "tf2",
         "num_gpus": 1,
         "eager_tracing": args['eager_tracing'],
-        "log_level": 'DEBUG'
+        "log_level": 'INFO'
     }
 
     stop = {
