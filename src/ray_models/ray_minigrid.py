@@ -207,7 +207,7 @@ def test_curiosity_on_partially_observable_domain(train=True):
                                 log_config=False)]
                                 )
                                 
-        check_learning_achieved(analysis, min_reward)
+        check_learning_achieved(analysis, "min_reward")
         best_config = analysis.get_best_config(metric="episode_reward_mean", mode="max")
         print("Best Config:", best_config)
         iters = analysis.trials[0].last_result["training_iteration"]

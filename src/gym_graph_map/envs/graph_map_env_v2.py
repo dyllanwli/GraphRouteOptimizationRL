@@ -54,15 +54,15 @@ class GraphMapEnvV2(gym.Env):
         self.adj_shape = (self.number_of_nodes, self.number_of_nodes)
         self.action_space = spaces.Discrete(
             self.number_of_nodes,)
-        
+
         self.observation_space = spaces.Dict({
             "observations": spaces.Box(low=np.array([
-                0, # current node
-                # 0, # current distance to goal
+                0,  # current node
+                0,  # current distance to goal
                 # 0,
             ]), high=np.array([
                 self.number_of_nodes,
-                # self.threshold*2,
+                self.threshold*2,
                 # self.threshold*2,
             ]), dtype=np.float32),
             "action_mask": spaces.Box(low=0, high=1, shape=(self.action_space.n,), dtype=np.int64),
@@ -143,16 +143,18 @@ class GraphMapEnvV2(gym.Env):
             self.current_closest_distance
         Uncomment self.action_space to update the neighbors
         """
-        self.neighbors = list(self.reindexed_graph.neighbors(self.current))
+        self.neighbors = list(x for x in self.reindexed_graph.neighbors(self.current) if x != self.last_current)
         if self.verbose:
             print(self.current, "'s neighbors: ", self.neighbors)
         # self.action_space.neighbors = self.neighbors
-        self.current_distance_goal = self._great_circle_vec(self.current_node, self.goal_node)
-        self.current_closest_distance = self._get_closest_distance_neg(self.current_node)
+        self.current_distance_goal = self._great_circle_vec(
+            self.current_node, self.goal_node)
+        self.current_closest_distance = self._get_closest_distance_neg(
+            self.current_node)
         self.state = {
             "observations": np.array([
                 self.current,
-                # self.current_distance_goal,
+                self.current_distance_goal,
                 # self.current_closest_distance,
             ], dtype=np.float32),
             "action_mask": self.action_masks(),
@@ -179,6 +181,7 @@ class GraphMapEnvV2(gym.Env):
         for _, row in df.iterrows():
             node = {'x': row[0], 'y': row[1], 'weight': row[2]}
             dist = self._great_circle_vec(center_node, node)
+
             # caculate the distance between the node and the center node
             if dist <= self.threshold:
                 neg_nodes.append(node)
@@ -239,15 +242,16 @@ class GraphMapEnvV2(gym.Env):
         TODO: consider eposide reward
         """
         # too close to a negative point will cause a negative reward
-        factor = min(1, 1 + np.log(self.current_closest_distance / self.avoid_threshold))
+        factor = min(
+            1, 1 + np.log(self.current_closest_distance / self.avoid_threshold))
         # r1 = np.log(- self.current_step + self.EP_LENGTH + 1) - 2
         r2 = 1.0 if self.current == self.goal else 0.0
         r3 = r2 * self.sigmoid2(self.path_length)
 
         # r4 = np.log2(- (self.travel_time /
         #              self.nx_shortest_travel_time_length) + 2) + 1
-        r5 = self.sigmoid1(self.current_distance_goal)
-        r = np.mean([r2, r3, r5]) * factor
+        # r5 = self.sigmoid1(self.current_distance_goal)
+        r = np.mean([r2, r3]) * factor
         return r
 
     def step(self, action):
@@ -265,10 +269,12 @@ class GraphMapEnvV2(gym.Env):
             self.done: whether the episode is done
             self.info: the information
         """
+        self.last_current = self.current
         self.current = action
         self.current_node = self.nodes[self.current]
         self.current_step += 1
         self.path.append(self.current)
+
         if self.verbose:
             print("self.path:", self.path)
 
@@ -317,6 +323,7 @@ class GraphMapEnvV2(gym.Env):
         self.goal_node = self.nodes[self.goal]
 
         self.current = self.origin
+        self.last_current = -1
         self.current_node = self.nodes[self.current]
         self.current_step = 0
         self.done = False
@@ -344,7 +351,7 @@ class GraphMapEnvV2(gym.Env):
                             assume_unique=True).astype(np.int64)
         return self.mask
 
-    def render(self, mode='human', default_path=None, plot_learned=True, plot_neg=True, save=True):
+    def render(self, mode='human', default_path=None, plot_learned=True, plot_neg=True, save=True, show=False):
         """
         Renders the environment
         """
@@ -358,11 +365,25 @@ class GraphMapEnvV2(gym.Env):
             fig, ax = ox.plot_graph_route(
                 self.reindexed_graph, self.path, save=False, filepath=self.render_img_path, show=False, close=False)
             if plot_neg:
-                gdf = geopandas.GeoDataFrame(
+                self.origin_node = self.nodes[self.origin]
+                goal_df = pd.DataFrame({
+                    "Longitude": [self.goal_node['x'], self.origin_node['x']],
+                    "Latitude": [self.goal_node['y'], self.origin_node['y']]
+                })
+                # plot the origin and goal
+                gdf_goal = geopandas.GeoDataFrame(
+                    goal_df, geometry=geopandas.points_from_xy(goal_df['Longitude'], goal_df['Latitude']))
+                gdf_goal.plot(ax=ax, color='yellow', markersize=20)
+
+                # plot negative points
+                gdf_neg = geopandas.GeoDataFrame(
                     self.df, geometry=geopandas.points_from_xy(self.df['Longitude'], self.df['Latitude']))
-                gdf.plot(ax=ax, markersize=10, color="blue", alpha=1, zorder=7)
+                gdf_neg.plot(ax=ax, markersize=10,
+                             color="blue", alpha=1, zorder=7)
+
                 plt.savefig(self.render_img_path)
-                plt.show()
+                if show:
+                    plt.show()
                 plt.close(fig)
 
         if mode == 'human':
