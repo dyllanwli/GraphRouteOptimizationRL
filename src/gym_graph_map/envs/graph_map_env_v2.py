@@ -53,7 +53,7 @@ class GraphMapEnvV2(gym.Env):
 
         self.adj_shape = (self.number_of_nodes, self.number_of_nodes)
         self.action_space = spaces.Discrete(
-            self.number_of_nodes,)
+            self.number_of_nodes)
 
         self.observation_space = spaces.Dict({
             "observations": spaces.Box(low=np.array([
@@ -64,12 +64,12 @@ class GraphMapEnvV2(gym.Env):
                 self.number_of_nodes,
                 self.threshold*2,
                 # self.threshold*2,
-            ]), dtype=np.float32),
+            ]), dtype=np.float64),
             "action_mask": spaces.Box(low=0, high=1, shape=(self.action_space.n,), dtype=np.int64),
-            # "adj": spaces.Box(low=0, high=float("inf"), shape=self.adj_shape, dtype=np.float32),
-            # "length": spaces.Box(low=0, high=float("inf"), shape=self.adj_shape, dtype=np.float32),
-            # "speed_kph": spaces.Box(low=0, high=float("inf"), shape=self.adj_shape, dtype=np.float32),
-            # "travel_time": spaces.Box(low=0, high=float("inf"), shape=self.adj_shape, dtype=np.float32),
+            # "adj": spaces.Box(low=0, high=float("inf"), shape=self.adj_shape, dtype=np.float64),
+            # "length": spaces.Box(low=0, high=float("inf"), shape=self.adj_shape, dtype=np.float64),
+            # "speed_kph": spaces.Box(low=0, high=float("inf"), shape=self.adj_shape, dtype=np.float64),
+            # "travel_time": spaces.Box(low=0, high=float("inf"), shape=self.adj_shape, dtype=np.float64),
         })
         self.reset()
         # Reset the environment
@@ -107,11 +107,16 @@ class GraphMapEnvV2(gym.Env):
     def _set_utility_function(self):
         """
         Sets the utility function
+        e.g. 
+            self.threshold = 2900.0
+            p = 2.9e+03
+            a = -2.9
+            b = 1e-03 (0.001)
         """
         self.sigmoid1 = lambda x: 2 / (1 + np.exp(x/self.threshold))
 
-        parameters = "%e" % self.threshold
-        sp = parameters.split("e")
+        p = "%e" % self.threshold
+        sp = p.split("e")
         a = -float(sp[0])
         b = 10**(-float(sp[1]))
         self.sigmoid2 = lambda x, a=a, b=b: 1 / (1 + np.exp(a + b * x))
@@ -156,12 +161,12 @@ class GraphMapEnvV2(gym.Env):
                 self.current,
                 self.current_distance_goal,
                 # self.current_closest_distance,
-            ], dtype=np.float32),
+            ], dtype=np.float64),
             "action_mask": self.action_masks(),
-            # "adj": nx.to_numpy_array(self.reindexed_graph, weight="None", dtype=np.float32),
-            # "length": nx.to_numpy_array(self.reindexed_graph, weight="length", dtype=np.float32),
-            # "speed_kph": nx.to_numpy_array(self.reindexed_graph, weight="speed_kph", dtype=np.float32),
-            # "travel_time": nx.to_numpy_array(self.reindexed_graph, weight="travel_time", dtype=np.float32),
+            # "adj": nx.to_numpy_array(self.reindexed_graph, weight="None", dtype=np.float64),
+            # "length": nx.to_numpy_array(self.reindexed_graph, weight="length", dtype=np.float64),
+            # "speed_kph": nx.to_numpy_array(self.reindexed_graph, weight="speed_kph", dtype=np.float64),
+            # "travel_time": nx.to_numpy_array(self.reindexed_graph, weight="travel_time", dtype=np.float64),
         }
 
     def _get_neg_points(self, df, center_node):
@@ -230,29 +235,32 @@ class GraphMapEnvV2(gym.Env):
     def _reward(self):
         """
         Computes the reward
-        Overall reward, [-inf, 1.0]
+        Overall reward, [-inf, 2.0]
         factor: [-inf, 1.0]: when closest_dist >= self.avoid_threshold, factor = 1.0; when closest_dist / self.avoid_threshold == 0.1, factor = 0
             which means the reward is 0; the closer the node is to the negative point, the less the reward
         r1 (deprecated): [0, 1.0] the more the steps, the less the r1, this effect will be even more stronger when the steps are close to EP_LENGTH
-        r2: {0.0, 1.0} if reached the goal, the r2 is 1.0 else 0.0
-        r3: [0.0, 1.0] if reached the goal, the r3 will caculate the path length with sigmoid function, 
-            the sigmod funtion is constructed by the self.threshold, if the path length is less than the threshold, the r3 is less than 0.5 else greater than 0.5
+        r2: {0.0, 1.0} (comfired) if reached the goal, the r2 is 1.0 else 0.0
+        r3: [0.0, 1.0] (comfired) if reached the goal, the r3 will caculate the path length with sigmoid function, 
+            if aims to reward the shorter path, the sigmod funtion is constructed by the self.threshold, 
+            if the path length is less than the threshold the r3 is greater than 0.5 else less than 0.5
         TODO: add r4
-        r5 range: [0, 1.0] the closer to the goal the higher the r5 for each step
+        r5 range: [0, 1.0] (comfired) the closer to the goal the higher the r5 for each done
         TODO: consider eposide reward
         """
         # too close to a negative point will cause a negative reward
         factor = min(
             1, 1 + np.log(self.current_closest_distance / self.avoid_threshold))
         # r1 = np.log(- self.current_step + self.EP_LENGTH + 1) - 2
-        r2 = 1.0 if self.current == self.goal else 0.0
+        r2 = 1.0 if self.info['arrived'] else 0.0
         r3 = r2 * self.sigmoid2(self.path_length)
 
         # r4 = np.log2(- (self.travel_time /
         #              self.nx_shortest_travel_time_length) + 2) + 1
-        # r5 = self.sigmoid1(self.current_distance_goal)
-        r = np.mean([r2, r3]) * factor
-        return r
+        # r5 = self.sigmoid1(self.current_distance_goal) if self.done else None
+        r = r2 + r3
+        # r = [x for x in r if x is not None]
+        # r = np.mean(r) * factor
+        return r * factor
 
     def step(self, action):
         """
@@ -279,7 +287,8 @@ class GraphMapEnvV2(gym.Env):
             print("self.path:", self.path)
 
         self._update_state()
-        if self.current == self.goal or self.current_step >= self.EP_LENGTH or self.neighbors == []:
+        self.info['arrived'] = self.current == self.goal
+        if self.info['arrived'] or self.current_step >= self.EP_LENGTH or self.neighbors == []:
             self.done = True
         self._update_attributes()
         self.reward = self._reward()
@@ -331,7 +340,7 @@ class GraphMapEnvV2(gym.Env):
         self.path_length = 0.0
         self.travel_time = 0.0
         self.neighbors = []
-        self.info = {}
+        self.info = {'arrived': False}
 
         self._update_state()
         if self.neighbors == [] or \
