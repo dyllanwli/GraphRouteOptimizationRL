@@ -46,8 +46,6 @@ class GraphMapEnvV2(gym.Env):
 
         self._set_config(config)
 
-        self._set_utility_function()
-
         self.seed(1)
         self._reindex_graph(self.graph)
 
@@ -57,21 +55,24 @@ class GraphMapEnvV2(gym.Env):
 
         self.observation_space = spaces.Dict({
             "observations": spaces.Box(low=np.array([
-                0,  # current node
-                0,  # current distance to goal
-                # 0,
+                0,  # self.current
+                0,  # self.current_distance_goal
+                0,  # self.current_closest_distance
+                0,  # self.path_length
+                0,  # self.travel_time
             ]), high=np.array([
                 self.number_of_nodes,
                 self.threshold*2,
-                # self.threshold*2,
+                np.inf,
+                np.inf,
+                np.inf,
             ]), dtype=np.float64),
             "action_mask": spaces.Box(low=0, high=1, shape=(self.action_space.n,), dtype=np.int64),
             # "adj": spaces.Box(low=0, high=float("inf"), shape=self.adj_shape, dtype=np.float64),
             # "length": spaces.Box(low=0, high=float("inf"), shape=self.adj_shape, dtype=np.float64),
-            # "speed_kph": spaces.Box(low=0, high=float("inf"), shape=self.adj_shape, dtype=np.float64),
-            # "travel_time": spaces.Box(low=0, high=float("inf"), shape=self.adj_shape, dtype=np.float64),
         })
         self.reset()
+        self._set_utility_function()
         # Reset the environment
 
         print("EP_LENGTH:", self.EP_LENGTH)
@@ -106,16 +107,16 @@ class GraphMapEnvV2(gym.Env):
 
     def _set_utility_function(self):
         """
-        Sets the utility function
+        Sets the utility function (sigmoid)
         e.g. 
-            self.threshold = 2900.0
+            self.path_length = 2900.0
             p = 2.9e+03
             a = -2.9
             b = 1e-03 (0.001)
         """
         self.sigmoid1 = lambda x: 2 / (1 + np.exp(x/self.threshold))
 
-        p = "%e" % self.threshold
+        p = "%e" % self.nx_shortest_path_length
         sp = p.split("e")
         a = -float(sp[0])
         b = 10**(-float(sp[1]))
@@ -148,7 +149,8 @@ class GraphMapEnvV2(gym.Env):
             self.current_closest_distance
         Uncomment self.action_space to update the neighbors
         """
-        self.neighbors = list(x for x in self.reindexed_graph.neighbors(self.current) if x != self.last_current)
+        self.neighbors = list(x for x in self.reindexed_graph.neighbors(
+            self.current) if x != self.last_current)
         if self.verbose:
             print(self.current, "'s neighbors: ", self.neighbors)
         # self.action_space.neighbors = self.neighbors
@@ -160,13 +162,11 @@ class GraphMapEnvV2(gym.Env):
             "observations": np.array([
                 self.current,
                 self.current_distance_goal,
-                # self.current_closest_distance,
+                self.current_closest_distance,
+                self.path_length,
+                self.travel_time,
             ], dtype=np.float64),
             "action_mask": self.action_masks(),
-            # "adj": nx.to_numpy_array(self.reindexed_graph, weight="None", dtype=np.float64),
-            # "length": nx.to_numpy_array(self.reindexed_graph, weight="length", dtype=np.float64),
-            # "speed_kph": nx.to_numpy_array(self.reindexed_graph, weight="speed_kph", dtype=np.float64),
-            # "travel_time": nx.to_numpy_array(self.reindexed_graph, weight="travel_time", dtype=np.float64),
         }
 
     def _get_neg_points(self, df, center_node):
@@ -235,8 +235,8 @@ class GraphMapEnvV2(gym.Env):
     def _reward(self):
         """
         Computes the reward
-        Overall reward, [-inf, 2.0]
-        factor: [-inf, 1.0]: when closest_dist >= self.avoid_threshold, factor = 1.0; when closest_dist / self.avoid_threshold == 0.1, factor = 0
+        Overall reward, [0, 2.0]
+        factor: [-inf, 1.0]: when closest_dist >= self.avoid_threshold, factor = 1.0; when closest_dist / self.avoid_threshold == 0.5, factor = 0
             which means the reward is 0; the closer the node is to the negative point, the less the reward
         r1 (deprecated): [0, 1.0] the more the steps, the less the r1, this effect will be even more stronger when the steps are close to EP_LENGTH
         r2: {0.0, 1.0} (comfired) if reached the goal, the r2 is 1.0 else 0.0
@@ -249,7 +249,7 @@ class GraphMapEnvV2(gym.Env):
         """
         # too close to a negative point will cause a negative reward
         factor = min(
-            1, 1 + np.log(self.current_closest_distance / self.avoid_threshold))
+            1, self.current_closest_distance / self.avoid_threshold)
         # r1 = np.log(- self.current_step + self.EP_LENGTH + 1) - 2
         r2 = 1.0 if self.info['arrived'] else 0.0
         r3 = r2 * self.sigmoid2(self.path_length)
@@ -286,11 +286,11 @@ class GraphMapEnvV2(gym.Env):
         if self.verbose:
             print("self.path:", self.path)
 
+        self._update_attributes()
         self._update_state()
         self.info['arrived'] = self.current == self.goal
         if self.info['arrived'] or self.current_step >= self.EP_LENGTH or self.neighbors == []:
             self.done = True
-        self._update_attributes()
         self.reward = self._reward()
         return self.state, self.reward, self.done, self.info
 
@@ -313,10 +313,10 @@ class GraphMapEnvV2(gym.Env):
             self.nx_shortest_path_length = sum(ox.utils_graph.get_route_edge_attributes(
                 self.reindexed_graph, self.nx_shortest_path, "length"))
 
-            self.nx_shortest_travel_time = nx.shortest_path(
-                self.reindexed_graph, source=self.origin, target=self.goal, weight="travel_time")
-            self.nx_shortest_travel_time_length = sum(ox.utils_graph.get_route_edge_attributes(
-                self.reindexed_graph, self.nx_shortest_travel_time, "travel_time"))
+            # self.nx_shortest_travel_time = nx.shortest_path(
+            #     self.reindexed_graph, source=self.origin, target=self.goal, weight="travel_time")
+            # self.nx_shortest_travel_time_length = sum(ox.utils_graph.get_route_edge_attributes(
+            #     self.reindexed_graph, self.nx_shortest_travel_time, "travel_time"))
         except nx.exception.NetworkXNoPath:
             if self.verbose:
                 print("No path found for default route. Restting...")
@@ -341,6 +341,8 @@ class GraphMapEnvV2(gym.Env):
         self.travel_time = 0.0
         self.neighbors = []
         self.info = {'arrived': False}
+
+        self.get_default_route()
 
         self._update_state()
         if self.neighbors == [] or \

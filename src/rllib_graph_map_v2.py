@@ -51,9 +51,9 @@ def create_policy_eval_video(env, trainer, filename="eval_video", num_episodes=2
 args = {
     'no_masking': False,
     'run': 'PPO',  # PPO, APPO
-    'stop_iters': 20,  # stop iters for each step
-    'stop_timesteps': 1e+6,
-    'stop_episode_reward_mean': 1.9,
+    'stop_iters': 50,  # stop iters for each step
+    'stop_timesteps': 1e+7,
+    'stop_episode_reward_mean': 2.0,
     'train': True,
     'checkpoint_path': ''
 }
@@ -83,15 +83,16 @@ if __name__ == "__main__":
             "custom_model_config": {"no_masking": args['no_masking']},
         },
         "lambda": 0.999,
-        "horizon": tune.grid_search([300, 500]),  # max steps per episode
+        "horizon": 300,  # max steps per episode
         "framework": "tf2",
         "num_gpus": 0,
+        "num_cpus_per_worker": 4,
         "num_envs_per_worker": 4,
-        "num_sgd_iter": 30,
-        "sgd_minibatch_size": tune.grid_search([32, 128]),
+        "num_sgd_iter": 30, # Can not be tuned...
+        "sgd_minibatch_size": 128,
         "num_workers": 0,  # 0 for curiosity
         # For production workloads, set eager_tracing=True ; to match the speed of tf-static-graph (framework='tf'). For debugging purposes, `eager_tracing=False` is the best choice.
-        "eager_tracing": False,
+        "eager_tracing": True,
         "log_level": 'ERROR',
         'exploration_config': {
             "type": "Curiosity",
@@ -99,14 +100,11 @@ if __name__ == "__main__":
             # in the policy model).
             "eta": 0.1,
             "lr": 0.0005,  # 0.0003 or 0.0005 seem to work fine as well.
-            "feature_dim": tune.grid_search([32, 64, 128]),
+            "feature_dim": 256,
             # No actual feature net: map directly from observations to feature
             # vector (linearly).
             "feature_net_config": {
-                "fcnet_hiddens": tune.grid_search([
-                    [128, 128],
-                    [512, 512],
-                ]),
+                "fcnet_hiddens": [256, 256],
                 "fcnet_activation": "relu",
             },
             "sub_exploration": {
@@ -129,7 +127,7 @@ if __name__ == "__main__":
         results = tune.run(args['run'], config=config, stop=stop, verbose=0,
                            callbacks=[WandbLoggerCallback(
                                project="graph_map_ray",
-                               group="grid_ICM_3",
+                               group="grid_ICM_5",
                                excludes=["perf"],
                                log_config=False)],
                            keep_checkpoints_num=1,
