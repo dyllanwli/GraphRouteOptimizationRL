@@ -5,6 +5,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from pathlib import Path
 from copy import deepcopy
+from get_elevation import add_node_elevations_opentopo
 
 repo_path = str(Path.home()) + "/dev/GraphRouteOptimizationRL/"
 
@@ -17,7 +18,11 @@ for x in G.nodes():
         print("Node {} has no neighbors".format(x))
         nG.remove_node(x)
 
+del G
 nG = ox.add_edge_speeds(nG)
 nG = ox.add_edge_travel_times(nG)
+
+nG = add_node_elevations_opentopo(nG)
+
 
 ox.save_graphml(nG, repo_path + "datasets/osmnx/houston_tx_usa_drive_2000_no_isolated_nodes.graphml")

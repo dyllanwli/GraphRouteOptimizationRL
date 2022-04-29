@@ -82,8 +82,13 @@ if __name__ == "__main__":
         "env_config": env_config,
         "model": {
             "custom_model": Model,
-            # disable action masking according to CLI
-            "custom_model_config": {"no_masking": args['no_masking']}
+            "fcnet_hiddens": [256, 256],
+            "fcnet_activation": "tanh",
+            "use_lstm": False,
+            "use_attention": False,
+            "custom_model_config": {
+                "no_masking": args['no_masking']
+            }
         },
         "lambda": 0.999,
         "horizon": 2000,  # max steps per episode
@@ -100,7 +105,6 @@ if __name__ == "__main__":
         "lr": 0.0005,  # 0.0003 or 0.0005 seem to work fine as well.
         'exploration_config': {
             "type": "Curiosity",
-            # in the policy model).
             "eta": 0.5,  # tune.grid_search([1.0, 0.5, 0.1]),  # curiosity
             "beta": 0.5,  # tune.grid_search([0.7, 0.5, 0.1]),
             "feature_dim": 256,  # curiosity
@@ -135,11 +139,11 @@ if __name__ == "__main__":
     if args['train']:
         # run with tune for auto trainer creation, stopping, TensorBoard, etc.
         results = tune.run(args['run'], config=config, stop=stop, verbose=0,
-                        #    callbacks=[WandbLoggerCallback(
-                        #        project="graph_map_ray",
-                        #        group="ppo_cur_6",
-                        #        excludes=["perf"],
-                        #        log_config=False)],
+                              callbacks=[WandbLoggerCallback(
+                                  project="graph_map_ray",
+                                  group="ppo_cur_6",
+                                  excludes=["perf"],
+                                  log_config=False)],
                            keep_checkpoints_num=1,
                            checkpoint_at_end=True,
                            # search_alg=hyperopt_search,

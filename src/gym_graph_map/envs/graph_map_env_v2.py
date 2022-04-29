@@ -19,6 +19,10 @@ import gym
 from gym import error, spaces, utils
 from gym.utils import seeding
 
+# edgetensor debug
+from tensorflow.python.ops.numpy_ops import np_config
+np_config.enable_numpy_behavior()
+
 INF = 100000000
 repo_path = str(Path.home()) + "/dev/GraphRouteOptimizationRL/"
 
@@ -53,22 +57,20 @@ class GraphMapEnvV2(gym.Env):
             self.number_of_nodes)
 
         self.observation_space = spaces.Dict({
-            "observations": spaces.Dict({
-                "state": spaces.Box(low=np.array([
-                    0,  # self.current
-                    0,  # self.current_distance_goal
-                    0,  # self.current_closest_distance to neg points
-                    0,  # self.path_length
-                    0,  # self.travel_time
-                ]), high=np.array([
-                    self.number_of_nodes,
-                    self.threshold*2,
-                    np.inf,
-                    np.inf,
-                    np.inf,
-                ]), dtype=np.float64),
-                "adj": spaces.Box(low=0, high=float("inf"), shape=self.adj_shape, dtype=np.float64),
-            }),
+            "observations": spaces.Box(low=np.array([
+                0,  # self.current
+                0,  # self.current_distance_goal
+                0,  # self.current_closest_distance to neg points
+                0,  # self.path_length
+                0,  # self.travel_time
+            ]), high=np.array([
+                self.number_of_nodes,
+                self.threshold*2,
+                np.inf,
+                np.inf,
+                np.inf,
+            ]), dtype=np.float64),
+            # "adj": spaces.Box(low=0, high=float("inf"), shape=self.adj_shape, dtype=np.float64),
             "action_mask": spaces.Box(low=0, high=1, shape=(self.action_space.n,), dtype=np.int64),
             # "length": spaces.Box(low=0, high=float("inf"), shape=self.adj_shape, dtype=np.float64),
         })
@@ -164,16 +166,15 @@ class GraphMapEnvV2(gym.Env):
         self.current_closest_distance = self._get_closest_distance_neg(
             self.current_node)
         self.state = {
-            "observations": {
-                "state": np.array([
-                    self.current,
-                    self.current_distance_goal,
-                    self.current_closest_distance,
-                    self.path_length,
-                    self.travel_time,
-                ], dtype=np.float64),
-                "adj":  nx.to_numpy_array(self.reindexed_graph, weight="None", dtype=np.float64),
-            },
+            "observations": np.array([
+                self.current,
+                self.current_distance_goal,
+                self.current_closest_distance,
+                self.path_length,
+                self.travel_time,
+            ], dtype=np.float64),
+            # "adj":  nx.to_numpy_array(self.reindexed_graph, weight="None", dtype=np.float64),
+
             "action_mask": self.action_masks(),
         }
 
