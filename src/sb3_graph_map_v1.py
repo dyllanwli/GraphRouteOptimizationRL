@@ -46,10 +46,10 @@ def train(env):
 
 
 def main():
-    home = str(Path.home())
-    graph_path = home + \
-        "/dev/GraphRouteOptimizationRL/datasets/osmnx/houston_tx_usa_drive_2000.graphml"
-    neg_df_path = home + "/dev/GraphRouteOptimizationRL/datasets/tx_flood.csv"
+    repo_path = str(Path.home()) + "/dev/GraphRouteOptimizationRL/"
+
+    graph_path = repo_path + "datasets/osmnx/houston_tx_usa_drive_2000.graphml"
+    neg_df_path = repo_path + "datasets/tx_flood.csv"
     G = ox.load_graphml(graph_path)
     print("Loaded graph")
     env_config = {

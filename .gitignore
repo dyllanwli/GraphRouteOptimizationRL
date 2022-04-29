@@ -12,3 +12,4 @@ src/runs/*
 *.gif
 *.mp4
 src/ray_models/__pycache__/*
+images/archives/*

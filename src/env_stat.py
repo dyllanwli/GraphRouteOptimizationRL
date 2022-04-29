@@ -16,12 +16,12 @@ import torch
 
 torch.cuda.empty_cache()
 
-graph_path = str(Path.home()) + \
-    "/dev/GraphRouteOptimizationRL/datasets/osmnx/houston_drive_20000.graphml"
+repo_path = str(Path.home()) + "/dev/GraphRouteOptimizationRL/"
+graph_path = repo_path + "datasets/osmnx/houston_tx_usa_drive_20000.graphml"
 
 # those files below are not used in this script
-neg_df_path = str(Path.home()) + \
-    "/dev/GraphRouteOptimizationRL/datasets/tx_flood.csv"
+neg_df_path = repo_path + "datasets/tx_flood.csv"
+
 G = ox.load_graphml(graph_path)
 # if those parameters are not set, uncomment the following line
 # G = ox.speed.add_edge_speeds(G)

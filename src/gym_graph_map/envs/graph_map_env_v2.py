@@ -1,5 +1,4 @@
 # from collections import defaultdict
-from typing import Tuple
 
 from pathlib import Path
 
@@ -21,7 +20,7 @@ from gym import error, spaces, utils
 from gym.utils import seeding
 
 INF = 100000000
-home = str(Path.home())
+repo_path = str(Path.home()) + "/dev/GraphRouteOptimizationRL/"
 
 
 class GraphMapEnvV2(gym.Env):
@@ -54,21 +53,23 @@ class GraphMapEnvV2(gym.Env):
             self.number_of_nodes)
 
         self.observation_space = spaces.Dict({
-            "observations": spaces.Box(low=np.array([
-                0,  # self.current
-                0,  # self.current_distance_goal
-                0,  # self.current_closest_distance
-                0,  # self.path_length
-                0,  # self.travel_time
-            ]), high=np.array([
-                self.number_of_nodes,
-                self.threshold*2,
-                np.inf,
-                np.inf,
-                np.inf,
-            ]), dtype=np.float64),
+            "observations": spaces.Dict({
+                "state": spaces.Box(low=np.array([
+                    0,  # self.current
+                    0,  # self.current_distance_goal
+                    0,  # self.current_closest_distance to neg points
+                    0,  # self.path_length
+                    0,  # self.travel_time
+                ]), high=np.array([
+                    self.number_of_nodes,
+                    self.threshold*2,
+                    np.inf,
+                    np.inf,
+                    np.inf,
+                ]), dtype=np.float64),
+                "adj": spaces.Box(low=0, high=float("inf"), shape=self.adj_shape, dtype=np.float64),
+            }),
             "action_mask": spaces.Box(low=0, high=1, shape=(self.action_space.n,), dtype=np.int64),
-            # "adj": spaces.Box(low=0, high=float("inf"), shape=self.adj_shape, dtype=np.float64),
             # "length": spaces.Box(low=0, high=float("inf"), shape=self.adj_shape, dtype=np.float64),
         })
         self.reset()
@@ -78,8 +79,9 @@ class GraphMapEnvV2(gym.Env):
         print("EP_LENGTH:", self.EP_LENGTH)
         print("action_space:", self.action_space)
         print("num of neg_points:", len(self.neg_points))
-        # print("origin:", self.origin)
-        # print("goal:", self.goal)
+        print("origin:", self.origin)
+        print("goal:", self.goal)
+        # print("origin_goal_distance", self.origin_goal_distance)
 
     def _set_config(self, config):
         """
@@ -103,7 +105,7 @@ class GraphMapEnvV2(gym.Env):
         self.EP_LENGTH = self.graph.number_of_nodes()/2  # based on the stats of the graph
 
         # utility values
-        self.render_img_path = home + "/dev/GraphRouteOptimizationRL/images/render_img.png"
+        self.render_img_path = repo_path + "images/render_img.png"
 
     def _set_utility_function(self):
         """
@@ -118,9 +120,12 @@ class GraphMapEnvV2(gym.Env):
 
         p = "%e" % self.nx_shortest_path_length
         sp = p.split("e")
-        a = -float(sp[0])
+        a = float(sp[0])
         b = 10**(-float(sp[1]))
-        self.sigmoid2 = lambda x, a=a, b=b: 1 / (1 + np.exp(a + b * x))
+
+        self.sigmoid2 = lambda x, a=a, b=b: 1 / (1 + np.exp(-a + b * x))
+
+        self.tanh = lambda x: np.tanh(a - b * x)
 
     def _reindex_graph(self, graph):
         """
@@ -147,10 +152,10 @@ class GraphMapEnvV2(gym.Env):
             self.state
             self.current_distance_goal
             self.current_closest_distance
-        Uncomment self.action_space to update the neighbors
+        Uncomment self.action_space to update the neighbors if use MaskedSpace
         """
         self.neighbors = list(x for x in self.reindexed_graph.neighbors(
-            self.current) if x != self.last_current)
+            self.current) if x not in self.passed_nodes_ids)
         if self.verbose:
             print(self.current, "'s neighbors: ", self.neighbors)
         # self.action_space.neighbors = self.neighbors
@@ -159,13 +164,16 @@ class GraphMapEnvV2(gym.Env):
         self.current_closest_distance = self._get_closest_distance_neg(
             self.current_node)
         self.state = {
-            "observations": np.array([
-                self.current,
-                self.current_distance_goal,
-                self.current_closest_distance,
-                self.path_length,
-                self.travel_time,
-            ], dtype=np.float64),
+            "observations": {
+                "state": np.array([
+                    self.current,
+                    self.current_distance_goal,
+                    self.current_closest_distance,
+                    self.path_length,
+                    self.travel_time,
+                ], dtype=np.float64),
+                "adj":  nx.to_numpy_array(self.reindexed_graph, weight="None", dtype=np.float64),
+            },
             "action_mask": self.action_masks(),
         }
 
@@ -235,29 +243,31 @@ class GraphMapEnvV2(gym.Env):
     def _reward(self):
         """
         Computes the reward
-        Overall reward, [0, 2.0]
+        Overall reward, [-inf, 2.0]
         factor: [-inf, 1.0]: when closest_dist >= self.avoid_threshold, factor = 1.0; when closest_dist / self.avoid_threshold == 0.5, factor = 0
             which means the reward is 0; the closer the node is to the negative point, the less the reward
         r1 (deprecated): [0, 1.0] the more the steps, the less the r1, this effect will be even more stronger when the steps are close to EP_LENGTH
         r2: {0.0, 1.0} (comfired) if reached the goal, the r2 is 1.0 else 0.0
-        r3: [0.0, 1.0] (comfired) if reached the goal, the r3 will caculate the path length with sigmoid function, 
+        r3_v0: [0.0, 1.0] (deprecated) if reached the goal, the r3 will caculate the path length with sigmoid function, 
             if aims to reward the shorter path, the sigmod funtion is constructed by the self.threshold, 
             if the path length is less than the threshold the r3 is greater than 0.5 else less than 0.5
+            r3_v0 deprecated because of overflow encountered inreduct issues in using sigmod and tanh
+        r3_v1: [0.0, 1.1] (comfired) if reached the goal, the r3 will caculate the path length with simple ratio
         TODO: add r4
         r5 range: [0, 1.0] (comfired) the closer to the goal the higher the r5 for each done
         TODO: consider eposide reward
         """
         # too close to a negative point will cause a negative reward
         factor = min(
-            1, self.current_closest_distance / self.avoid_threshold)
+            1, 1 + np.log2(self.current_closest_distance / self.avoid_threshold))
         # r1 = np.log(- self.current_step + self.EP_LENGTH + 1) - 2
         r2 = 1.0 if self.info['arrived'] else 0.0
-        r3 = r2 * self.sigmoid2(self.path_length)
+        r3_v0 = r2 * self.tanh(self.path_length)
+        # r3_v1 = r2 * (self.nx_shortest_path_length / self.path_length)
 
         # r4 = np.log2(- (self.travel_time /
         #              self.nx_shortest_travel_time_length) + 2) + 1
-        # r5 = self.sigmoid1(self.current_distance_goal) if self.done else None
-        r = r2 + r3
+        r = r2 + r3_v0
         # r = [x for x in r if x is not None]
         # r = np.mean(r) * factor
         return r * factor
@@ -282,6 +292,7 @@ class GraphMapEnvV2(gym.Env):
         self.current_node = self.nodes[self.current]
         self.current_step += 1
         self.path.append(self.current)
+        self.passed_nodes_ids.add(self.current)
 
         if self.verbose:
             print("self.path:", self.path)
@@ -322,6 +333,18 @@ class GraphMapEnvV2(gym.Env):
                 print("No path found for default route. Restting...")
             self.reset()
 
+    def _check_origin_goal_distance(self):
+        """
+        Check the distance between origin and goal for test
+        """
+        self.origin_goal_distance = self._great_circle_vec(
+            self.current_node, self.goal_node)
+
+        if self.origin_goal_distance > self.avoid_threshold:
+            if self.verbose:
+                print("The distance between origin and goal is too close, resetting...")
+            self.reset()
+
     def reset(self):
         """
         Resets the environment
@@ -332,8 +355,9 @@ class GraphMapEnvV2(gym.Env):
         self.goal_node = self.nodes[self.goal]
 
         self.current = self.origin
-        self.last_current = -1
         self.current_node = self.nodes[self.current]
+
+        self.passed_nodes_ids = {self.current}
         self.current_step = 0
         self.done = False
         self.path = [self.current]
@@ -341,6 +365,8 @@ class GraphMapEnvV2(gym.Env):
         self.travel_time = 0.0
         self.neighbors = []
         self.info = {'arrived': False}
+
+        # self._check_origin_goal_distance()
 
         self.get_default_route()
 
@@ -370,7 +396,7 @@ class GraphMapEnvV2(gym.Env):
             print("Get path", self.path)
         if default_path is not None:
             ox.plot_graph_route(self.reindexed_graph, default_path,
-                                save=save, filepath=home + "/dev/GraphRouteOptimizationRL/images/default_image.png")
+                                save=save, filepath=repo_path + "images/default_image.png")
         if plot_learned:
             save = False if plot_neg else save
             fig, ax = ox.plot_graph_route(
