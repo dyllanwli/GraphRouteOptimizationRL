@@ -14,3 +14,4 @@ src/runs/*
 
 images/archives/*
 */*/__pycache__/
+src/preprocess/download_elevation.py
