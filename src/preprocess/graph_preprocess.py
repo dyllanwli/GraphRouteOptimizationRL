@@ -22,7 +22,9 @@ del G
 nG = ox.add_edge_speeds(nG)
 nG = ox.add_edge_travel_times(nG)
 
+# https://api.opentopodata.org/v1/srtm90m?locations=39.747114,-104.996334
 nG = add_node_elevations_opentopo(nG)
 
+print("elevation added")
 
 ox.save_graphml(nG, repo_path + "datasets/osmnx/houston_tx_usa_drive_2000_no_isolated_nodes.graphml")

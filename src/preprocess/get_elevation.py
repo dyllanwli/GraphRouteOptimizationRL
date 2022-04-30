@@ -12,7 +12,7 @@ import requests
 from osmnx import downloader
 
 def add_node_elevations_opentopo(
-    G, max_locations_per_batch=100, pause_duration=1, precision=3
+    G, max_locations_per_batch=100, pause_duration=0, precision=3
 ):  # pragma: no cover
     """
     Add `elevation` (meters) attribute to each node using a web service.
@@ -33,11 +33,12 @@ def add_node_elevations_opentopo(
     """
     # different elevation API endpoints formatted ready for use
     endpoints = {
-        "aster30m": "https://api.opentopodata.org/v1/aster30m?locations={}",
-        "srtm30m": "https://api.opentopodata.org/v1/srtm30m?locations={}",
+        "self": "http://:5000/v1/srtm90m?locations={}",
+        # "aster30m": "https://api.opentopodata.org/v1/aster30m?locations={}",
+        # "srtm30m": "https://api.opentopodata.org/v1/srtm30m?locations={}",
         # "airmap": "https://api.airmap.com/elevation/v1/ele?points={}",
     }
-    provider = ["aster30m", "srtm30m"]
+    provider = ["self"]
 
     # make a pandas series of all the nodes' coordinates as 'lat,lng'
     # round coordinates to 5 decimal places (approx 1 meter) to be able to fit
@@ -87,7 +88,7 @@ def add_node_elevations_opentopo(
         if elevation_provider == "airmap":
             results.extend(response_json["data"])
         else:
-            results.extend(response_json["results"]['elevation'])
+            results.extend([r['elevation'] for r in response_json["results"]])
 
     # sanity check that all our vectors have the same number of elements
     if not (len(results) == len(G) == len(node_points)):
