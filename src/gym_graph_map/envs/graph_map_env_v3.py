@@ -18,16 +18,15 @@ import matplotlib.pyplot as plt
 import gym
 from gym import error, spaces, utils
 from gym.utils import seeding
-from ray import tune
 
 INF = 100000000
 repo_path = str(Path.home()) + "/dev/GraphRouteOptimizationRL/"
 
 
-class GraphMapEnvV2(gym.Env):
+class GraphMapEnvV3(gym.Env):
     """
     Custom Environment that follows gym interface
-    V2 is the version that uses the compatible with rllib
+    V3 is the version that trying to not use action mask
     """
     metadata = {'render.modes': ['human']}
 

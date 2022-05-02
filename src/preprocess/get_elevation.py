@@ -33,7 +33,7 @@ def add_node_elevations_opentopo(
     """
     # different elevation API endpoints formatted ready for use
     endpoints = {
-        "self": "http://:5000/v1/srtm90m?locations={}",
+        "self": "http://10.42.1.0:5000/v1/srtm90m?locations={}",
         # "aster30m": "https://api.opentopodata.org/v1/aster30m?locations={}",
         # "srtm30m": "https://api.opentopodata.org/v1/srtm30m?locations={}",
         # "airmap": "https://api.airmap.com/elevation/v1/ele?points={}",

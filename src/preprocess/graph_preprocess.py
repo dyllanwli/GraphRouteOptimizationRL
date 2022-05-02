@@ -9,7 +9,7 @@ from get_elevation import add_node_elevations_opentopo
 
 repo_path = str(Path.home()) + "/dev/GraphRouteOptimizationRL/"
 
-graph_path = repo_path + "datasets/osmnx/houston_tx_usa_drive_2000.graphml"
+graph_path = repo_path + "datasets/osmnx/houston_tx_usa_drive_20000.graphml"
 
 G = ox.load_graphml(graph_path)
 nG = deepcopy(G)
@@ -27,4 +27,4 @@ nG = add_node_elevations_opentopo(nG)
 
 print("elevation added")
 
-ox.save_graphml(nG, repo_path + "datasets/osmnx/houston_tx_usa_drive_2000_no_isolated_nodes.graphml")
+ox.save_graphml(nG, repo_path + "datasets/osmnx/houston_tx_usa_drive_20000_no_isolated_nodes.graphml")

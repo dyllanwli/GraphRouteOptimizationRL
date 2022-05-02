@@ -1,3 +1,4 @@
+from tensorflow.python.ops.numpy_ops import np_config
 from pathlib import Path
 import os
 
@@ -11,7 +12,9 @@ from gym_graph_map.envs.graph_map_env_v2 import GraphMapEnvV2
 # model
 import ray
 from ray import tune
-from ray.rllib.agents import ppo
+
+
+from ray.rllib.agents import ppo, sac
 from ray_models.models import ActionMaskModel as Model
 # from ray_models.models import TorchActionMaskModel as Model
 # tune
@@ -28,6 +31,9 @@ display = Display(visible=0, size=(1400, 900))
 display.start()
 
 gym.logger.set_level(40)
+
+# eager tensor debug
+np_config.enable_numpy_behavior()
 
 repo_path = str(Path.home()) + "/dev/GraphRouteOptimizationRL/"
 
@@ -53,12 +59,12 @@ def create_policy_eval_video(env, trainer, filename="eval_video", num_episodes=2
 
 args = {
     'no_masking': False,
-    'run': 'PPO',  # PPO, APPO
-    'stop_iters': 70,  # stop iters for each step
-    'stop_timesteps': 1e+7,
-    'stop_episode_reward_mean': 2.0,
+    'run': 'PPO', 
+    'stop_iters': 200,  # stop iters for each step
+    'stop_timesteps': 1e+8,
+    'stop_episode_reward_mean': 3.0,
     'train': True,
-    'checkpoint_path': ''
+    'checkpoint_path': '/h/diya.li/ray_results/PPO/PPO_GraphMapEnvV2_89ea7_00000_0_2022-04-30_12-47-01/checkpoint_000100/checkpoint-100'
 }
 
 if __name__ == "__main__":
@@ -85,6 +91,7 @@ if __name__ == "__main__":
             "fcnet_hiddens": [256, 256],
             "fcnet_activation": "tanh",
             "use_lstm": False,
+            # "lstm_cell_size": 1511,
             "use_attention": False,
             "custom_model_config": {
                 "no_masking": args['no_masking']
@@ -101,8 +108,9 @@ if __name__ == "__main__":
         "num_workers": 0,  # 0 for curiosity
         # For production workloads, set eager_tracing=True ; to match the speed of tf-static-graph (framework='tf'). For debugging purposes, `eager_tracing=False` is the best choice.
         "eager_tracing": True,
+        "eager_max_retraces": None,
         "log_level": 'ERROR',
-        "lr": 0.0005,  # 0.0003 or 0.0005 seem to work fine as well.
+        "lr": 0.0007,  # 0.0003 or 0.0005 seem to work fine as well.
         'exploration_config': {
             "type": "Curiosity",
             "eta": 0.5,  # tune.grid_search([1.0, 0.5, 0.1]),  # curiosity
@@ -110,13 +118,13 @@ if __name__ == "__main__":
             "feature_dim": 256,  # curiosity
             # No actual feature net: map directly from observations to feature vector (linearly).
             # Hidden layers of the "inverse" model.
-            "inverse_net_hiddens": [256],
+            "inverse_net_hiddens": tune.grid_search([[256, 256], [512, 512]]),
             # Activation of the "inverse" model.
-            "inverse_net_activation": "relu",
+            "inverse_net_activation": tune.grid_search(["tanh", "relu"]),
             # Hidden layers of the "forward" model.
-            "forward_net_hiddens": [256],
+            "forward_net_hiddens": tune.grid_search([[256, 256], [512, 512]]),
             # Activation of the "forward" model.
-            "forward_net_activation": "relu",
+            "forward_net_activation": tune.grid_search(["tanh", "relu"]),
             "feature_net_config": {  # curiosity
                 "fcnet_hiddens": [256, 256],
                 "fcnet_activation": "relu",
@@ -139,11 +147,11 @@ if __name__ == "__main__":
     if args['train']:
         # run with tune for auto trainer creation, stopping, TensorBoard, etc.
         results = tune.run(args['run'], config=config, stop=stop, verbose=0,
-                              callbacks=[WandbLoggerCallback(
-                                  project="graph_map_ray",
-                                  group="ppo_cur_6",
-                                  excludes=["perf"],
-                                  log_config=False)],
+                           callbacks=[WandbLoggerCallback(
+                               project="graph_map_ray",
+                               group="ppo_cur_nx_7",
+                               excludes=["perf"],
+                               log_config=False)],
                            keep_checkpoints_num=1,
                            checkpoint_at_end=True,
                            # search_alg=hyperopt_search,
@@ -165,8 +173,8 @@ if __name__ == "__main__":
     # ppo_config.update(config)
     # config['num_workers'] = 0
     config['num_envs_per_worker'] = 1
-    trainer = ppo.PPOTrainer(config=config, env=GraphMapEnvV2) if args['run'] == "PPO" else ppo.PPOTrainer(
-        config=config, env=GraphMapEnvV2)
+    trainer = ppo.PPOTrainer(config=config, env=GraphMapEnvV2)
+    # trainer = ppo.APPOTrainer(config=config, env=GraphMapEnvV2)
     trainer.restore(checkpoint_path)
     env = GraphMapEnvV2(config["env_config"])
     print("run one iteration until arrived and render")

@@ -9,3 +9,8 @@ register(
         id = "graph-map-v1",
         entry_point="gym_graph_map.envs:GraphMapEnvV2"
         )
+
+register(
+        id = "graph-map-v3",
+        entry_point="gym_graph_map.envs:GraphMapEnvV3"
+        )
