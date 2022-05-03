@@ -14,8 +14,7 @@ from ray import tune
 
 
 from ray.rllib.agents import ppo
-# from ray_models.models import ActionMaskModel as Model
-from ray_models.models import TorchActionMaskModel as Model
+from ray_models.models import ActionMaskModel, TorchActionMaskModel
 # tune
 from ray.tune.integration.wandb import WandbLoggerCallback
 # from ray.tune.suggest.hyperopt import HyperOptSearch
@@ -64,7 +63,8 @@ args = {
     'stop_timesteps': 1e+8,
     'stop_episode_reward_mean': 3.0,
     'train': True,
-    'checkpoint_path': ''
+    'checkpoint_path': '',
+    'framework': 'torch',
 }
 
 if __name__ == "__main__":
@@ -87,9 +87,8 @@ if __name__ == "__main__":
         "env": GraphMapEnvV2,
         "env_config": env_config,
         "model": {
-            "custom_model": Model,
-            "fcnet_hiddens": [256, 256, 256],
-            # "_disable_preprocessor_api": True,
+            "custom_model": TorchActionMaskModel if args["framework"] == "torch" else ActionMaskModel,
+            "fcnet_hiddens": [256, 256],
             # "fcnet_activation": "tanh",
             # "use_lstm": False,
             # "use_attention": True,
@@ -99,11 +98,11 @@ if __name__ == "__main__":
         },
         "lambda": 0.999,
         "horizon": 2000,  # max steps per episode
-        "framework": "torch",
+        "framework": args['framework'],
         "num_gpus": 0,
         "num_cpus_per_worker": 4,
         "num_envs_per_worker": 4,
-        # "train_batch_size": 4000,
+        "simple_optimizer": True,
         # "num_sgd_iter": 30, # Can not be tuned...
         # "sgd_minibatch_size": 128,
         "num_workers": 0,  # 0 for curiosity
@@ -115,19 +114,19 @@ if __name__ == "__main__":
         'exploration_config': {
             "type": "Curiosity",
             "eta": 0.5,  # tune.grid_search([1.0, 0.5, 0.1]),  # curiosity
-            "beta": 0.2,  # tune.grid_search([0.7, 0.5, 0.1]),
-            "feature_dim": 288,  # curiosity
+            "beta": 0.5,  # tune.grid_search([0.7, 0.5, 0.1]),
+            "feature_dim": 256,  # curiosity
             # No actual feature net: map directly from observations to feature vector (linearly).
             # Hidden layers of the "inverse" model.
-            "inverse_net_hiddens": [256, 256, 256],
+            "inverse_net_hiddens": [256],
             # Activation of the "inverse" model.
             "inverse_net_activation": "relu",
             # Hidden layers of the "forward" model.
-            "forward_net_hiddens": [256, 256, 256],
+            "forward_net_hiddens": [256],
             # Activation of the "forward" model.
             "forward_net_activation": "relu",
             "feature_net_config": {  # curiosity
-                "fcnet_hiddens": [256, 256, 256],
+                "fcnet_hiddens": [256, 256],
                 "fcnet_activation": "relu",
             },
             "sub_exploration": {
