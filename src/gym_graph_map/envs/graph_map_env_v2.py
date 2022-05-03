@@ -16,11 +16,10 @@ import matplotlib.pyplot as plt
 
 # for reinforcement learning environment
 import gym
-from gym import error, spaces, utils
+from gym import spaces
 from gym.utils import seeding
 from ray import tune
 
-INF = 100000000
 repo_path = str(Path.home()) + "/dev/GraphRouteOptimizationRL/"
 
 
@@ -56,7 +55,6 @@ class GraphMapEnvV2(gym.Env):
         self._set_utility_function()
         # Reset the environment
 
-        print("EP_LENGTH:", self.EP_LENGTH)
         print("action_space:", self.action_space)
         print("num of neg_points:", len(self.neg_points))
         print("origin:", self.origin)
@@ -66,40 +64,48 @@ class GraphMapEnvV2(gym.Env):
     def _set_action_observation(self):
         """
         Sets the observation
+            action_space:
+                type: Discrete
+                shape: (number_of_nodes)
+            observation_space:
+                type: ndarray
+                shape: (number_of_nodes, number_of_nodes+2)
+                first line is the state
+                second line is the reference
         """
 
         self.adj_shape = (self.number_of_nodes, self.number_of_nodes)
         self.action_space = spaces.Discrete(
             self.number_of_nodes)
-        # set observation space
-        state_low = np.array([
-            0,  # self.current
-            0,  # self.goal
-            0,  # self.current_distance_goal
-            0,  # self.current_closest_distance to neg points
-            0,  # self.path_length
-            0,  # self.travel_time
-        ])
-        nx_path_references_low = np.zeros(self.number_of_nodes)
-        obs_low = np.concatenate((state_low, nx_path_references_low))
 
-        state_high = np.array([
-            self.number_of_nodes,
-            self.number_of_nodes,
-            self.threshold*2,
-            np.inf,
-            np.inf,
-            np.inf,
-        ])
+        # set observation space low
+        state_low = np.full(shape=(self.number_of_nodes,), fill_value=0)
+        nx_path_references_low = np.zeros(self.number_of_nodes)
+        adj_low = np.full(shape=self.adj_shape, fill_value=-np.inf)
+        obs_low = np.vstack((
+            state_low,
+            nx_path_references_low,
+            # adj_low
+        ))
+
+        # set observation space high
+        state_high = np.full(shape=(self.number_of_nodes,), fill_value=np.inf)
         nx_path_referenes_high = np.full(
-            self.number_of_nodes, self.number_of_nodes)
-        obs_high = np.concatenate((state_high, nx_path_referenes_high))
+            shape=(self.number_of_nodes, ), fill_value=self.number_of_nodes)
+        adj_high = np.full(shape=self.adj_shape, fill_value=np.inf)
+        obs_high = np.vstack((
+            state_high,
+            nx_path_referenes_high,
+            # adj_high
+        ))
+
         self.observation_space = spaces.Dict({
-            "observations": spaces.Box(low=obs_low, high=obs_high, dtype=np.float64),
-            # "adj": spaces.Box(low=0, high=float("inf"), shape=self.adj_shape, dtype=np.float64),
+            "observations": spaces.Box(low=obs_low, high=obs_high, dtype=np.float32),
             "action_mask": spaces.Box(low=0, high=1, shape=(self.number_of_nodes,), dtype=np.int64),
-            # "length": spaces.Box(low=0, high=float("inf"), shape=self.adj_shape, dtype=np.float64),
+            # "length": spaces.Box(low=0, high=float("inf"), shape=self.adj_shape, dtype=np.float32),
         })
+
+        # self.adj = nx.to_numpy_array(self.reindexed_graph, weight="None", dtype=np.float32)
 
     def _set_config(self, config):
         """
@@ -120,7 +126,6 @@ class GraphMapEnvV2(gym.Env):
 
         self.avoid_threshold = self.threshold / 5
         self.number_of_nodes = self.graph.number_of_nodes()
-        self.EP_LENGTH = self.graph.number_of_nodes()/2  # based on the stats of the graph
 
         # utility values
         self.render_img_path = repo_path + "images/render_img.png"
@@ -188,6 +193,7 @@ class GraphMapEnvV2(gym.Env):
             print("current_distance_goal:", self.current_distance_goal)
             print("nx_shortest_path_length:", self.nx_shortest_path_length)
 
+        # set state
         state = np.array([
             self.current,
             self.goal,
@@ -195,14 +201,20 @@ class GraphMapEnvV2(gym.Env):
             self.current_closest_distance,
             self.path_length,
             self.travel_time,
-        ], dtype=np.float64)
-        nx_path_references = np.pad(np.array(self.nx_shortest_path, dtype=np.float64), pad_width=(
+        ], dtype=np.float32)
+        state = np.pad(state, pad_width=(0, self.number_of_nodes - state.shape[0]),
+                       mode='constant', constant_values=0)
+
+        # set references
+        nx_path_references = np.pad(np.array(self.nx_shortest_path), pad_width=(
             0, self.number_of_nodes - len(self.nx_shortest_path)), mode='constant', constant_values=0)
 
         self.state = {
-            "observations": np.concatenate((state, nx_path_references)),
-            # "adj":  nx.to_numpy_array(self.reindexed_graph, weight="None", dtype=np.float64),
-
+            "observations": np.vstack((
+                state,
+                nx_path_references,
+                # self.adj
+            )),
             "action_mask": self.action_masks(),
         }
 
@@ -281,7 +293,7 @@ class GraphMapEnvV2(gym.Env):
         r4: cumulative reward, [0.0, 0.001]. It aims to reward the agent who follow the references
 
         r5 range: [0, 1.0] (deprecated) the closer to the goal the higher the r5 for each done
-        r1 (deprecated): [0, 1.0] the more the steps, the less the r1, this effect will be even more stronger when the steps are close to EP_LENGTH
+
         r3_v0: [0.0, 1.0] (deprecated) if reached the goal, the r3 will caculate the path length with sigmoid function,
             if aims to reward the shorter path, the sigmod funtion is constructed by the self.threshold,
             if the path length is less than the threshold the r3 is greater than 0.5 else less than 0.5
@@ -291,7 +303,6 @@ class GraphMapEnvV2(gym.Env):
         neg = min(
             0, np.log2(self.current_closest_distance / self.avoid_threshold))
 
-        # r1 = np.log(- self.current_step + self.EP_LENGTH + 1) - 2
         r2 = 1.0 if self.info['arrived'] else 0.0
         # r3 = r2 * self.tanh(self.path_length) # v0
         r3 = r2 * (self.nx_shortest_path_length / self.path_length)  # v1
@@ -333,7 +344,7 @@ class GraphMapEnvV2(gym.Env):
         self._update_state()
 
         self.info['arrived'] = self.current == self.goal
-        if self.info['arrived'] or self.current_step >= self.EP_LENGTH or self.neighbors == []:
+        if self.info['arrived'] or self.neighbors == []:
             self.done = True
 
         self.reward = self._reward()
@@ -424,13 +435,13 @@ class GraphMapEnvV2(gym.Env):
                             assume_unique=True).astype(np.int64)
         return self.mask
 
-    def render(self, mode='human', plot_learned=True, plot_neg=True, save=True, show=False):
+    def render(self, mode='human', plot_default=False, plot_learned=True, plot_neg=True, save=True, show=False):
         """
         Renders the environment
         """
         if self.verbose:
             print("Get path", self.path)
-        if self.done:
+        if self.done and plot_default:
             ox.plot_graph_route(self.reindexed_graph, self.nx_shortest_path,
                                 save=save, filepath=repo_path + "images/default_image.png")
         if plot_learned:

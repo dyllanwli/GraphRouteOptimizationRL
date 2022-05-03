@@ -13,5 +13,6 @@ src/runs/*
 *.mp4
 
 images/archives/*
-*/*/__pycache__/
+*/*/__pycache__/*
 src/preprocess/download_elevation.py
+src/ray_models/__pycache__/*

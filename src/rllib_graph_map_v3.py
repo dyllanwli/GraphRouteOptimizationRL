@@ -1,5 +1,6 @@
 from tensorflow.python.ops.numpy_ops import np_config
 from pathlib import Path
+import os
 
 # env
 import osmnx as ox
@@ -14,8 +15,8 @@ from ray import tune
 
 
 from ray.rllib.agents import ppo
-# from ray_models.models import ActionMaskModel as Model
-from ray_models.models import TorchActionMaskModel as Model
+from ray_models.models import ActionMaskModel as Model
+# from ray_models.models import TorchActionMaskModel as Model
 # tune
 from ray.tune.integration.wandb import WandbLoggerCallback
 # from ray.tune.suggest.hyperopt import HyperOptSearch
@@ -29,7 +30,6 @@ from pyvirtualdisplay import Display
 display = Display(visible=0, size=(1400, 900))
 display.start()
 
-# ignore UserWarning: Box bound precision
 gym.logger.set_level(40)
 
 # eager tensor debug
@@ -59,12 +59,12 @@ def create_policy_eval_video(env, trainer, filename="eval_video", num_episodes=2
 
 args = {
     'no_masking': False,
-    'run': 'PPO',
+    'run': 'APPO', 
     'stop_iters': 200,  # stop iters for each step
     'stop_timesteps': 1e+8,
     'stop_episode_reward_mean': 3.0,
     'train': True,
-    'checkpoint_path': ''
+    'checkpoint_path': '/h/diya.li/ray_results/PPO/PPO_GraphMapEnvV2_89ea7_00000_0_2022-04-30_12-47-01/checkpoint_000100/checkpoint-100'
 }
 
 if __name__ == "__main__":
@@ -88,22 +88,21 @@ if __name__ == "__main__":
         "env_config": env_config,
         "model": {
             "custom_model": Model,
-            "fcnet_hiddens": [256, 256, 256],
-            # "_disable_preprocessor_api": True,
-            # "fcnet_activation": "tanh",
-            # "use_lstm": False,
-            # "use_attention": True,
+            "fcnet_hiddens": [256, 256],
+            "fcnet_activation": "tanh",
+            "use_lstm": False,
+            # "lstm_cell_size": 1511,
+            "use_attention": False,
             "custom_model_config": {
                 "no_masking": args['no_masking']
             }
         },
         "lambda": 0.999,
         "horizon": 2000,  # max steps per episode
-        "framework": "torch",
+        "framework": "tf2",
         "num_gpus": 0,
         "num_cpus_per_worker": 4,
         "num_envs_per_worker": 4,
-        # "train_batch_size": 4000,
         # "num_sgd_iter": 30, # Can not be tuned...
         # "sgd_minibatch_size": 128,
         "num_workers": 0,  # 0 for curiosity
@@ -111,27 +110,27 @@ if __name__ == "__main__":
         "eager_tracing": True,
         "eager_max_retraces": None,
         "log_level": 'ERROR',
-        "lr": 0.0005,  # 0.0003 or 0.0005 seem to work fine as well.
+        "lr": 0.0007,  # 0.0003 or 0.0005 seem to work fine as well.
         'exploration_config': {
             "type": "Curiosity",
             "eta": 0.5,  # tune.grid_search([1.0, 0.5, 0.1]),  # curiosity
-            "beta": 0.2,  # tune.grid_search([0.7, 0.5, 0.1]),
-            "feature_dim": 288,  # curiosity
+            "beta": 0.5,  # tune.grid_search([0.7, 0.5, 0.1]),
+            "feature_dim": 256,  # curiosity
             # No actual feature net: map directly from observations to feature vector (linearly).
             # Hidden layers of the "inverse" model.
-            "inverse_net_hiddens": [256, 256, 256],
+            "inverse_net_hiddens": [256],
             # Activation of the "inverse" model.
-            "inverse_net_activation": "relu",
+            "inverse_net_activation": "tanh",
             # Hidden layers of the "forward" model.
-            "forward_net_hiddens": [256, 256, 256],
+            "forward_net_hiddens": [256],
             # Activation of the "forward" model.
-            "forward_net_activation": "relu",
+            "forward_net_activation": "tanh",
             "feature_net_config": {  # curiosity
-                "fcnet_hiddens": [256, 256, 256],
+                "fcnet_hiddens": [256, 256],
                 "fcnet_activation": "relu",
             },
             "sub_exploration": {
-                "type": "StochasticSampling",  # default exploration
+                "type": "StochasticSampling",
             },
         }
     }
@@ -174,8 +173,8 @@ if __name__ == "__main__":
     # ppo_config.update(config)
     # config['num_workers'] = 0
     config['num_envs_per_worker'] = 1
+    # trainer = ppo.PPOTrainer(config=config, env=GraphMapEnvV2)
     trainer = ppo.PPOTrainer(config=config, env=GraphMapEnvV2)
-    # trainer = ppo.APPOTrainer(config=config, env=GraphMapEnvV2)
     trainer.restore(checkpoint_path)
     env = GraphMapEnvV2(config["env_config"])
     print("run one iteration until arrived and render")

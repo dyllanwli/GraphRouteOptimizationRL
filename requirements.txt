@@ -3,3 +3,5 @@ ipdb==0.13.9
 tensorflow==2.8.0
 osmnx==1.1.2
 ale-py==0.7.4
+karateclub==1.2.3
+https://s3-us-west-2.amazonaws.com/ray-wheels/latest/ray-2.0.0.dev0-cp38-cp38-manylinux2014_x86_64.whl
