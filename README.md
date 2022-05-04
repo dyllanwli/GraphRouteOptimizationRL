@@ -9,7 +9,7 @@
 
 # demo
 
-![demo images](images/archives/arrived/01/eval_video.gif)
+![demo images](images/arrived/01/eval_video.gif)
 
 # References:
 + https://github.com/instance01/osmnx-mdp | visizulation
