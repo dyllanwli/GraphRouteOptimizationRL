@@ -16,3 +16,5 @@ images/archives/*
 */*/__pycache__/*
 src/preprocess/download_elevation.py
 src/ray_models/__pycache__/*
+datasets/embeddings/*.npy
+datasets/osmnx/houston_tx_usa_drive_20000_slope.graphml

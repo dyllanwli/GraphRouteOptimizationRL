@@ -13,10 +13,8 @@ from gym_graph_map.envs.graph_map_env_v2 import GraphMapEnvV2
 import ray
 from ray import tune
 
-
 from ray.rllib.agents import ppo
-from ray_models.models import ActionMaskModel as Model
-# from ray_models.models import TorchActionMaskModel as Model
+
 # tune
 from ray.tune.integration.wandb import WandbLoggerCallback
 # from ray.tune.suggest.hyperopt import HyperOptSearch
@@ -36,7 +34,8 @@ gym.logger.set_level(40)
 np_config.enable_numpy_behavior()
 
 repo_path = str(Path.home()) + "/dev/GraphRouteOptimizationRL/"
-
+embedding_dir = repo_path + "datasets/embeddings/" 
+graph_dir = repo_path + "datasets/osmnx/"
 
 def create_policy_eval_video(env, trainer, filename="eval_video", num_episodes=200, fps=30):
     filename = repo_path + "images/" + filename + ".gif"
@@ -58,8 +57,7 @@ def create_policy_eval_video(env, trainer, filename="eval_video", num_episodes=2
 
 
 args = {
-    'no_masking': False,
-    'run': 'APPO', 
+    'run': 'APPO',
     'stop_iters': 200,  # stop iters for each step
     'stop_timesteps': 1e+8,
     'stop_episode_reward_mean': 3.0,
@@ -70,33 +68,22 @@ args = {
 if __name__ == "__main__":
     # Init Ray in local mode for easier debugging.
     ray.init(local_mode=True, include_dashboard=False)
-    graph_path = repo_path + \
-        "datasets/osmnx/houston_tx_usa_drive_2000_no_isolated_nodes.graphml"
-    neg_df_path = repo_path + "datasets/tx_flood.csv"
+    graph_path = graph_dir + "houston_tx_usa_drive_2000_no_isolated_nodes.graphml"
+
     G = ox.load_graphml(graph_path)
     print("Loaded graph")
     env_config = {
         'graph': G,
         'verbose': False,
-        'neg_df': pd.read_csv(neg_df_path),
+        'neg_df_path': repo_path + "datasets/tx_flood.csv",
         'center_node': (29.764050, -95.393030),  # sample
         # 'center_node': (29.72346214336903, -95.38599726549226), # houston
-        'threshold': 2900
+        'threshold': 2900,
+        'embedding_path': embedding_dir + "houston_tx_usa_drive_2000_slope_node2vec_32d.npy"
     }
     config = {
         "env": GraphMapEnvV2,
         "env_config": env_config,
-        "model": {
-            "custom_model": Model,
-            "fcnet_hiddens": [256, 256],
-            "fcnet_activation": "tanh",
-            "use_lstm": False,
-            # "lstm_cell_size": 1511,
-            "use_attention": False,
-            "custom_model_config": {
-                "no_masking": args['no_masking']
-            }
-        },
         "lambda": 0.999,
         "horizon": 2000,  # max steps per episode
         "framework": "tf2",

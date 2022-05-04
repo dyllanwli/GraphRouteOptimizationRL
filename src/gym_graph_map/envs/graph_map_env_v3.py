@@ -22,6 +22,7 @@ from ray import tune
 
 repo_path = str(Path.home()) + "/dev/GraphRouteOptimizationRL/"
 
+
 class GraphMapEnvV3(gym.Env):
     """
     Custom Environment that follows gym interface
@@ -44,12 +45,9 @@ class GraphMapEnvV3(gym.Env):
         super(gym.Env, self).__init__()
 
         self._set_config(config)
-
         self.seed(1)
-        self._reindex_graph(self.graph)
 
         self._set_action_observation()
-
         self.reset()
         self._set_utility_function()
         # Reset the environment
@@ -65,17 +63,17 @@ class GraphMapEnvV3(gym.Env):
         Sets the observation
             action_space:
                 type: Discrete
-                shape: (number_of_nodes)
+                shape: North, Northeast, East, Southeast, South, Southwest, West, Northwest (8)
             observation_space:
                 type: ndarray
-                shape: (number_of_nodes, number_of_nodes+2)
+                shape: (current_embedding, goal_embedding - current_embedding, nx_shortest_path_embedding)
+                    (self.embedding_dim, self.embedding_dim, (len(nx_shortest_path), self.embedding_dim))
                 first line is the state
                 second line is the reference
         """
 
         self.adj_shape = (self.number_of_nodes, self.number_of_nodes)
-        self.action_space = spaces.Discrete(
-            self.number_of_nodes)
+        self.action_space = spaces.Discrete(8)
 
         # set observation space low
         state_low = np.full(shape=(self.number_of_nodes,), fill_value=0)
@@ -99,21 +97,23 @@ class GraphMapEnvV3(gym.Env):
         ))
 
         self.observation_space = spaces.Dict({
-            "observations": spaces.Box(low=obs_low, high=obs_high, dtype=np.float32),
-            "action_mask": spaces.Box(low=0, high=1, shape=(self.number_of_nodes,), dtype=np.int64),
+            "current_embedding": spaces.Box(low=obs_low, high=obs_high, dtype=np.float32),
+            "goal_embedding": spaces.Box(low=obs_low, high=obs_high, dtype=np.float32),
+            "nx_shortest_path_embedding": spaces.Box(low=obs_low, high=obs_high, dtype=np.float32),
             # "length": spaces.Box(low=0, high=float("inf"), shape=self.adj_shape, dtype=np.float32),
         })
 
-        # self.adj = nx.to_numpy_array(self.reindexed_graph, weight="None", dtype=np.float32)
+        # self.adj = nx.to_numpy_array(self.graph, weight="None", dtype=np.float32)
 
     def _set_config(self, config):
         """
         Sets the config
         """
         # Constant values
-        self.graph = config['graph']
+        self._reindex_graph(config["graph"])
+
         self.verbose = config['verbose'] if config['verbose'] else False
-        neg_df = config['neg_df']
+        neg_df = pd.read_csv(config['neg_df_path'])
         center_node = config['center_node']
         self.threshold = config['threshold']
         # graph radius or average short path in this graph, sampled by env stat
@@ -122,6 +122,10 @@ class GraphMapEnvV3(gym.Env):
 
         if self.neg_points == []:
             raise ValueError("Negative weights not found")
+
+        self.embedding = np.load(config['embedding_path'])
+        assert self.embedding.shape[0] == self.number_of_nodes
+        self.embedding_dim = self.embedding.shape[1]
 
         self.avoid_threshold = self.threshold / 5
         self.number_of_nodes = self.graph.number_of_nodes()
@@ -151,20 +155,19 @@ class GraphMapEnvV3(gym.Env):
 
     def _reindex_graph(self, graph):
         """
-        Reindexes the graph
-        node_dict: {151820557: 0}
-        node_dict_reversed: {0: 151820557}
+        reindex the graph:
+            Reindexes the graph
+            node_dict: {151820557: 0}
+            node_dict_reversed: {0: 151820557}
         """
-        self.reindexed_graph = nx.relabel.convert_node_labels_to_integers(
+        self.graph = nx.relabel.convert_node_labels_to_integers(
             graph, first_label=0, ordering='default')
 
-        self.node_dict = {node: i for i,
-                          node in enumerate(graph.nodes(data=False))}
+        # self.node_dict = {node: i for i, node in enumerate(graph.nodes(data=False))}
 
-        self.node_dict_reversed = {
-            i: node for node, i in self.node_dict.items()}
+        # self.node_dict_reversed = {i: node for node, i in self.node_dict.items()}
 
-        self.nodes = self.reindexed_graph.nodes()
+        self.nodes = self.graph.nodes()
 
     def _update_state(self):
         """
@@ -176,7 +179,7 @@ class GraphMapEnvV3(gym.Env):
             self.current_closest_distance
         Uncomment self.action_space to update the neighbors if use MaskedSpace
         """
-        self.neighbors = list(x for x in self.reindexed_graph.neighbors(
+        self.neighbors = list(x for x in self.graph.neighbors(
             self.current) if x not in self.passed_nodes_ids)
 
         # self.action_space.neighbors = self.neighbors
@@ -214,7 +217,6 @@ class GraphMapEnvV3(gym.Env):
                 nx_path_references,
                 # self.adj
             )),
-            "action_mask": self.action_masks(),
         }
 
     def _get_neg_points(self, df, center_node):
@@ -261,10 +263,10 @@ class GraphMapEnvV3(gym.Env):
         Updates the path length and travel time
         """
         self.path_length += ox.utils_graph.get_route_edge_attributes(
-            self.reindexed_graph, self.path[-2:], "length")[0]
+            self.graph, self.path[-2:], "length")[0]
 
         self.travel_time += ox.utils_graph.get_route_edge_attributes(
-            self.reindexed_graph, self.path[-2:], "travel_time")[0]
+            self.graph, self.path[-2:], "travel_time")[0]
 
     def _get_closest_distance_neg(self, node):
         """
@@ -364,14 +366,14 @@ class GraphMapEnvV3(gym.Env):
         """
         try:
             self.nx_shortest_path = nx.shortest_path(
-                self.reindexed_graph, source=self.origin, target=self.goal, weight="length")
+                self.graph, source=self.origin, target=self.goal, weight="length")
             self.nx_shortest_path_length = sum(ox.utils_graph.get_route_edge_attributes(
-                self.reindexed_graph, self.nx_shortest_path, "length"))
+                self.graph, self.nx_shortest_path, "length"))
 
             # self.nx_shortest_travel_time = nx.shortest_path(
-            #     self.reindexed_graph, source=self.origin, target=self.goal, weight="travel_time")
+            #     self.graph, source=self.origin, target=self.goal, weight="travel_time")
             # self.nx_shortest_travel_time_length = sum(ox.utils_graph.get_route_edge_attributes(
-            #     self.reindexed_graph, self.nx_shortest_travel_time, "travel_time"))
+            #     self.graph, self.nx_shortest_travel_time, "travel_time"))
         except nx.exception.NetworkXNoPath:
             if self.verbose:
                 print("No path found for default route. Restting...")
@@ -426,6 +428,7 @@ class GraphMapEnvV3(gym.Env):
 
     def action_masks(self):
         """
+        Deprecated in this version
         Computes the action mask
         Returns:
             action_mask: [1, 0, ...]
@@ -441,12 +444,12 @@ class GraphMapEnvV3(gym.Env):
         if self.verbose:
             print("Get path", self.path)
         if self.done and plot_default:
-            ox.plot_graph_route(self.reindexed_graph, self.nx_shortest_path,
+            ox.plot_graph_route(self.graph, self.nx_shortest_path,
                                 save=save, filepath=repo_path + "images/default_image.png")
         if plot_learned:
             save = False if plot_neg else save
             fig, ax = ox.plot_graph_route(
-                self.reindexed_graph, self.path, save=False, filepath=self.render_img_path, show=False, close=False)
+                self.graph, self.path, save=False, filepath=self.render_img_path, show=False, close=False)
             if plot_neg:
                 self.origin_node = self.nodes[self.origin]
                 goal_df = pd.DataFrame({

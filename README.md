@@ -6,6 +6,11 @@
 # Usage
 - Check `/src/gym_graph_map` to use our osmnx openai gym environment 
 
+
+# demo
+
+![demo images](./images/archives/arrived/01/eval_video.gif)
+
 # References:
 + https://github.com/instance01/osmnx-mdp | visizulation
 + https://github.com/nathanrooy/taxicab | nearest point optimization

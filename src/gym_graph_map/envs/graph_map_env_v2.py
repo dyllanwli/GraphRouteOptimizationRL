@@ -156,14 +156,11 @@ class GraphMapEnvV2(gym.Env):
         node_dict: {151820557: 0}
         node_dict_reversed: {0: 151820557}
         """
-        self.reindexed_graph = nx.relabel.convert_node_labels_to_integers(
-            graph, first_label=0, ordering='default')
+        self.reindexed_graph = nx.relabel.convert_node_labels_to_integers(graph, first_label=0, ordering='default')
 
-        self.node_dict = {node: i for i,
-                          node in enumerate(graph.nodes(data=False))}
+        # self.node_dict = {node: i for i, node in enumerate(graph.nodes(data=False))}
 
-        self.node_dict_reversed = {
-            i: node for node, i in self.node_dict.items()}
+        # self.node_dict_reversed = {i: node for node, i in self.node_dict.items()}
 
         self.nodes = self.reindexed_graph.nodes()
 
