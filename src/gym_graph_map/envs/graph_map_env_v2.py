@@ -36,7 +36,7 @@ class GraphMapEnvV2(gym.Env):
         config: {
             'graph': graph,
             'verbose': True,
-            'neg_df': neg_df,
+            'neg_df_path': neg_df_path,
             'center_node': (29.764050, -95.393030),
             'threshold': 2900,
         }
@@ -114,7 +114,7 @@ class GraphMapEnvV2(gym.Env):
         # Constant values
         self.graph = config['graph']
         self.verbose = config['verbose'] if config['verbose'] else False
-        neg_df = config['neg_df']
+        neg_df = pd.read(config['neg_df_path'])
         center_node = config['center_node']
         self.threshold = config['threshold']
         # graph radius or average short path in this graph, sampled by env stat
@@ -156,7 +156,8 @@ class GraphMapEnvV2(gym.Env):
         node_dict: {151820557: 0}
         node_dict_reversed: {0: 151820557}
         """
-        self.reindexed_graph = nx.relabel.convert_node_labels_to_integers(graph, first_label=0, ordering='default')
+        self.reindexed_graph = nx.relabel.convert_node_labels_to_integers(
+            graph, first_label=0, ordering='default')
 
         # self.node_dict = {node: i for i, node in enumerate(graph.nodes(data=False))}
 

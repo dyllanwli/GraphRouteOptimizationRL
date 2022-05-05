@@ -7,7 +7,7 @@ import osmnx as ox
 import pandas as pd
 import gym
 from gym.spaces import Box, Discrete
-from gym_graph_map.envs.graph_map_env_v2 import GraphMapEnvV2
+from gym_graph_map.envs.graph_map_env_v3 import GraphMapEnvV3 as GraphMapEnv
 
 # model
 import ray
@@ -34,8 +34,9 @@ gym.logger.set_level(40)
 np_config.enable_numpy_behavior()
 
 repo_path = str(Path.home()) + "/dev/GraphRouteOptimizationRL/"
-embedding_dir = repo_path + "datasets/embeddings/" 
+embedding_dir = repo_path + "datasets/embeddings/"
 graph_dir = repo_path + "datasets/osmnx/"
+
 
 def create_policy_eval_video(env, trainer, filename="eval_video", num_episodes=200, fps=30):
     filename = repo_path + "images/" + filename + ".gif"
@@ -57,18 +58,19 @@ def create_policy_eval_video(env, trainer, filename="eval_video", num_episodes=2
 
 
 args = {
-    'run': 'APPO',
-    'stop_iters': 200,  # stop iters for each step
+    'run': 'PPO',
+    'stop_iters': 300,  # stop iters for each step
     'stop_timesteps': 1e+8,
-    'stop_episode_reward_mean': 3.0,
+    'stop_episode_reward_mean': 2.0,
     'train': True,
+    'wandb': True,
     'checkpoint_path': '/h/diya.li/ray_results/PPO/PPO_GraphMapEnvV2_89ea7_00000_0_2022-04-30_12-47-01/checkpoint_000100/checkpoint-100'
 }
 
 if __name__ == "__main__":
     # Init Ray in local mode for easier debugging.
     ray.init(local_mode=True, include_dashboard=False)
-    graph_path = graph_dir + "houston_tx_usa_drive_2000_no_isolated_nodes.graphml"
+    graph_path = graph_dir + "houston_tx_usa_drive_2000_slope.graphml"
 
     G = ox.load_graphml(graph_path)
     print("Loaded graph")
@@ -79,10 +81,11 @@ if __name__ == "__main__":
         'center_node': (29.764050, -95.393030),  # sample
         # 'center_node': (29.72346214336903, -95.38599726549226), # houston
         'threshold': 2900,
-        'embedding_path': embedding_dir + "houston_tx_usa_drive_2000_slope_node2vec_32d.npy"
+        'embedding_path': embedding_dir + "houston_tx_usa_drive_2000_slope_node2vec.npy",
+        # 'wandb': args['wandb'],
     }
     config = {
-        "env": GraphMapEnvV2,
+        "env": GraphMapEnv,
         "env_config": env_config,
         "lambda": 0.999,
         "horizon": 2000,  # max steps per episode
@@ -107,11 +110,11 @@ if __name__ == "__main__":
             # Hidden layers of the "inverse" model.
             "inverse_net_hiddens": [256],
             # Activation of the "inverse" model.
-            "inverse_net_activation": "tanh",
+            "inverse_net_activation": "relu",
             # Hidden layers of the "forward" model.
             "forward_net_hiddens": [256],
             # Activation of the "forward" model.
-            "forward_net_activation": "tanh",
+            "forward_net_activation": "relu",
             "feature_net_config": {  # curiosity
                 "fcnet_hiddens": [256, 256],
                 "fcnet_activation": "relu",
@@ -131,14 +134,18 @@ if __name__ == "__main__":
     # hyperopt_search = HyperOptSearch(metric="episode_reward_mean", mode="max")
 
     checkpoints = None
+    if args['wandb']:
+        cb = WandbLoggerCallback(
+            project="graph_map_ray",
+            group="ppo_cur_v3_1",
+            excludes=["perf"],
+            log_config=False)
+    else:
+        cb = None
     if args['train']:
         # run with tune for auto trainer creation, stopping, TensorBoard, etc.
         results = tune.run(args['run'], config=config, stop=stop, verbose=0,
-                           callbacks=[WandbLoggerCallback(
-                               project="graph_map_ray",
-                               group="ppo_cur_nx_7",
-                               excludes=["perf"],
-                               log_config=False)],
+                           callbacks=[cb],
                            keep_checkpoints_num=1,
                            checkpoint_at_end=True,
                            # search_alg=hyperopt_search,
@@ -156,14 +163,14 @@ if __name__ == "__main__":
         checkpoint_path = checkpoints[0][0]
     else:
         checkpoint_path = args['checkpoint_path']
-    # ppo_config = ppo.DEFAULT_CONFIG.copy()
+    ppo_config = ppo.DEFAULT_CONFIG.copy()
     # ppo_config.update(config)
     # config['num_workers'] = 0
     config['num_envs_per_worker'] = 1
     # trainer = ppo.PPOTrainer(config=config, env=GraphMapEnvV2)
-    trainer = ppo.PPOTrainer(config=config, env=GraphMapEnvV2)
+    trainer = ppo.PPOTrainer(config=config, env=GraphMapEnv)
     trainer.restore(checkpoint_path)
-    env = GraphMapEnvV2(config["env_config"])
+    env = GraphMapEnv(config["env_config"])
     print("run one iteration until arrived and render")
     filename = create_policy_eval_video(env, trainer)
     print(filename, "recorded")

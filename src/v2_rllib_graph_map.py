@@ -6,7 +6,7 @@ import osmnx as ox
 import pandas as pd
 import gym
 from gym.spaces import Box, Discrete
-from gym_graph_map.envs.graph_map_env_v2 import GraphMapEnvV2
+from gym_graph_map.envs.graph_map_env_v2 import GraphMapEnvV2 as GraphMapEnv
 
 # model
 import ray
@@ -64,6 +64,7 @@ args = {
     'stop_episode_reward_mean': 3.0,
     'train': True,
     'checkpoint_path': '',
+    'wandb': True,
     'framework': 'torch',
 }
 
@@ -71,20 +72,20 @@ if __name__ == "__main__":
     # Init Ray in local mode for easier debugging.
     ray.init(local_mode=True, include_dashboard=False)
     graph_path = repo_path + \
-        "datasets/osmnx/houston_tx_usa_drive_2000_no_isolated_nodes.graphml"
-    neg_df_path = repo_path + "datasets/tx_flood.csv"
+        "datasets/osmnx/houston_tx_usa_drive_2000_slope.graphml"
+
     G = ox.load_graphml(graph_path)
     print("Loaded graph")
     env_config = {
         'graph': G,
         'verbose': False,
-        'neg_df': pd.read_csv(neg_df_path),
+        'neg_df_path': repo_path + "datasets/tx_flood.csv",
         'center_node': (29.764050, -95.393030),  # sample
         # 'center_node': (29.72346214336903, -95.38599726549226), # houston
         'threshold': 2900
     }
     config = {
-        "env": GraphMapEnvV2,
+        "env": GraphMapEnv,
         "env_config": env_config,
         "model": {
             "custom_model": TorchActionMaskModel if args["framework"] == "torch" else ActionMaskModel,
@@ -143,15 +144,20 @@ if __name__ == "__main__":
 
     # hyperopt_search = HyperOptSearch(metric="episode_reward_mean", mode="max")
 
+    if args['wandb']:
+        cb = WandbLoggerCallback(
+            project="graph_map_ray",
+            group="ppo_cur_nx_7",
+            excludes=["perf"],
+            log_config=False)
+    else:
+        cb = None
+
     checkpoints = None
     if args['train']:
         # run with tune for auto trainer creation, stopping, TensorBoard, etc.
         results = tune.run(args['run'], config=config, stop=stop, verbose=0,
-                           callbacks=[WandbLoggerCallback(
-                               project="graph_map_ray",
-                               group="ppo_cur_nx_7",
-                               excludes=["perf"],
-                               log_config=False)],
+                           callbacks=[cb],
                            keep_checkpoints_num=1,
                            checkpoint_at_end=True,
                            # search_alg=hyperopt_search,
@@ -173,10 +179,10 @@ if __name__ == "__main__":
     # ppo_config.update(config)
     # config['num_workers'] = 0
     config['num_envs_per_worker'] = 1
-    trainer = ppo.PPOTrainer(config=config, env=GraphMapEnvV2)
-    # trainer = ppo.APPOTrainer(config=config, env=GraphMapEnvV2)
+    trainer = ppo.PPOTrainer(config=config, env=GraphMapEnv)
+    # trainer = ppo.APPOTrainer(config=config, env=GraphMapEnv)
     trainer.restore(checkpoint_path)
-    env = GraphMapEnvV2(config["env_config"])
+    env = GraphMapEnv(config["env_config"])
     print("run one iteration until arrived and render")
     filename = create_policy_eval_video(env, trainer)
     print(filename, "recorded")

@@ -1,4 +1,3 @@
-#!/usr/bin/env python
 # coding: utf-8
 
 # In[24]:
@@ -17,7 +16,8 @@ from copy import deepcopy
 repo_path = str(Path.home()) + "/dev/GraphRouteOptimizationRL/"
 graph_path = repo_path +     "datasets/osmnx/houston_tx_usa_drive_2000_slope.graphml"
 
-output = repo_path + "datasets/embeddings/"
+output = repo_path + "datasets/embeddings/houston_tx_usa_drive_2000_slope"
+
 
 G = ox.load_graphml(graph_path)
 G = nx.relabel.convert_node_labels_to_integers(G, first_label=0, ordering='default')
@@ -27,14 +27,22 @@ G = nx.relabel.convert_node_labels_to_integers(G, first_label=0, ordering='defau
 
 
 model = Node2Vec(dimensions=64, workers=16)
-# model = NetMF()
-
 print("Fitting")
 model.fit(G)
 
 print("Getting embedding")
 X = model.get_embedding()
 
+np.save(output + "_node2vec.npy", X)
+
+model = NetMF()
+print("Fitting")
+model.fit(G)
+
+print("Getting embedding")
+X = model.get_embedding()
+
+np.save(output + "_netmf.npy", X)
 
 # In[26]:
 
@@ -51,7 +59,7 @@ X = model.get_embedding()
 # In[27]:
 
 
-np.save(output + "houston_tx_usa_drive_2000_slope_node2vec_feather_32d.npy", X)
+np.save(output + "e_netmf_feather_32d.npy", X)
 
 
 # In[ ]:
