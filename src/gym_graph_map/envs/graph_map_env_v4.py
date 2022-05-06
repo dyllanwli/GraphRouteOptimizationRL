@@ -8,6 +8,7 @@ Version 4 of the Graph Map Environment with the following changes:
     handle the wrapper stuff.
 4. The environment now has a envolving environment based on a marsh attribute and elevation attribute.
 """
+from copy import deepcopy
 from pathlib import Path
 
 import numpy as np
@@ -141,7 +142,7 @@ class GraphMapEnvV4(gym.Env):
             "action_mask": spaces.Box(low=0, high=1, shape=(self.number_of_nodes,), dtype=np.int64),
         })
 
-        # self.adj = nx.to_numpy_array(self.reindexed_graph, weight="None", dtype=np.float32)
+        # self.adj = nx.to_numpy_array(self.graph, weight="None", dtype=np.float32)
 
     def _update_state(self):
         """
@@ -155,21 +156,20 @@ class GraphMapEnvV4(gym.Env):
         """
 
         # forward neighbors
-        self.neighbors = list(x for x in self.reindexed_graph.neighbors(
+        self.neighbors = list(x for x in self.graph.neighbors(
             self.current) if x not in self.passed_nodes_ids)
 
-        for n in self.neighbors:
-            self.neighbors_embedding[n] =
+        # for n in self.neighbors:
 
         # self.action_space.neighbors = self.neighbors
 
-        self.neighbors_
+        # self.neighbors_
 
         self.current_distance2goal = self._great_circle_vec(
             self.current_node, self.goal_node)
 
-        self.current_distance2neg = self._get_closest_distance_neg(
-            self.current_node)
+        self.current_distance2neg = max(10, self._get_closest_distance_neg(
+            self.current_node))  # make sure log won't be 0
 
         if self.verbose:
             print(self.current, "'s neighbors: ", self.neighbors)
@@ -218,8 +218,9 @@ class GraphMapEnvV4(gym.Env):
         self.threshold = config['threshold']
         # graph radius or average short path in this graph, sampled by env stat
         self.threshold = 2900
-        self.neg_points = self._get_neg_points(
+        self.neg_points_reset, self.neg_df_reset = self._get_neg_points(
             pd.read_csv(config['neg_df_path']), center_node)
+
         self.envolving = config['envolving']
         self.envolving_freq = config['envolving_freq']
 
@@ -233,6 +234,12 @@ class GraphMapEnvV4(gym.Env):
 
         # utility values
         self.render_img_path = repo_path + "images/render_img.png"
+
+    def _get_neighbors_embeddings(self):
+        """
+        Returns the embeddings of the neighbors
+        """
+        pass
 
     def _set_utility_function(self):
         """
@@ -260,14 +267,14 @@ class GraphMapEnvV4(gym.Env):
         node_dict: {151820557: 0}
         node_dict_reversed: {0: 151820557}
         """
-        self.reindexed_graph = nx.relabel.convert_node_labels_to_integers(
+        self.graph = nx.relabel.convert_node_labels_to_integers(
             graph, first_label=0, ordering='default')
 
         # self.node_dict = {node: i for i, node in enumerate(graph.nodes(data=False))}
 
         # self.node_dict_reversed = {i: node for node, i in self.node_dict.items()}
 
-        self.nodes = self.reindexed_graph.nodes()
+        self.nodes = self.graph.nodes()
 
     def _get_neg_points(self, df, center_node):
         """
@@ -281,7 +288,7 @@ class GraphMapEnvV4(gym.Env):
         """
         neg_nodes = []
         center_node = {'y': center_node[0], 'x': center_node[1]}
-        self.neg_df = pd.DataFrame(columns=['Latitude', 'Longitude', 'weight'])
+        neg_df = pd.DataFrame(columns=['Latitude', 'Longitude', 'weight'])
         index = 0
 
         for _, row in df.iterrows():
@@ -291,9 +298,9 @@ class GraphMapEnvV4(gym.Env):
             # caculate the distance between the node and the center node
             if dist <= self.threshold:
                 neg_nodes.append(node)
-                self.neg_df.loc[index] = [row[0], row[1], row[2]]
+                neg_df.loc[index] = [row[0], row[1], row[2]]
                 index += 1
-        return neg_nodes
+        return neg_nodes, neg_df
 
     def _great_circle_vec(self, node1, node2):
         """
@@ -313,10 +320,10 @@ class GraphMapEnvV4(gym.Env):
         Updates the path length and travel time
         """
         self.path_length += ox.utils_graph.get_route_edge_attributes(
-            self.reindexed_graph, self.path[-2:], "length")[0]
+            self.graph, self.path[-2:], "length")[0]
 
         self.travel_time += ox.utils_graph.get_route_edge_attributes(
-            self.reindexed_graph, self.path[-2:], "travel_time")[0]
+            self.graph, self.path[-2:], "travel_time")[0]
 
     def _get_closest_distance_neg(self, node):
         """
@@ -342,10 +349,10 @@ class GraphMapEnvV4(gym.Env):
             envolving_node = self.graph.nodes[np.random.choice(
                 self.number_of_nodes)]
             node = {'y': envolving_node['y'],
-                    'x': envolving_node['x'], 'weight': 10}
+                    'x': envolving_node['x'], 'weight': 5}
             self.neg_points.append(node)
             series = pd.Series(
-                [envolving_node['y'], envolving_node['x'], 10])
+                [envolving_node['y'], envolving_node['x'], 10], index=self.neg_df.columns)
             self.neg_df = pd.concat(
                 [self.neg_df, series.to_frame().T], ignore_index=True)
 
@@ -405,6 +412,7 @@ class GraphMapEnvV4(gym.Env):
         self.passed_nodes_ids.add(self.current)
 
         self._envolving()
+        print(self.neg_df.shape)
 
         if self.verbose:
             print("self.path:", self.path)
@@ -434,14 +442,14 @@ class GraphMapEnvV4(gym.Env):
         """
         try:
             self.nx_shortest_path = nx.shortest_path(
-                self.reindexed_graph, source=self.origin, target=self.goal, weight="length")
+                self.graph, source=self.origin, target=self.goal, weight="length")
             self.nx_shortest_path_length = sum(ox.utils_graph.get_route_edge_attributes(
-                self.reindexed_graph, self.nx_shortest_path, "length"))
+                self.graph, self.nx_shortest_path, "length"))
 
             self.nx_shortest_travel_time = nx.shortest_path(
-                self.reindexed_graph, source=self.origin, target=self.goal, weight="travel_time")
+                self.graph, source=self.origin, target=self.goal, weight="travel_time")
             self.nx_shortest_travel_time_length = sum(ox.utils_graph.get_route_edge_attributes(
-                self.reindexed_graph, self.nx_shortest_travel_time, "travel_time"))
+                self.graph, self.nx_shortest_travel_time, "travel_time"))
         except nx.exception.NetworkXNoPath:
             if self.verbose:
                 print("No path found for default route. Restting...")
@@ -458,6 +466,21 @@ class GraphMapEnvV4(gym.Env):
             if self.verbose:
                 print("The distance between origin and goal is too close, resetting...")
             self.reset()
+
+    def _reset_render(self):
+        """
+        Reset the render
+        """
+        # plotting base map
+        self.fig, self.ax = ox.plot_graph(self.graph, show=False, close=False)
+        self.origin_node = self.nodes[self.origin]
+        self.ax.plot(
+            self.origin_node['x'], self.origin_node['y'], c='yellow', marker='o', markersize=5)
+        self.ax.plot(self.goal_node['x'], self.goal_node['y'],
+                     c='yellow', marker='o', markersize=5)
+        for node in self.neg_points:
+            self.ax.plot(node['x'], node['y'], c='blue',
+                         marker='o', markersize=5)
 
     def reset(self):
         """
@@ -481,8 +504,11 @@ class GraphMapEnvV4(gym.Env):
         self.current_path_embedding = np.zeros(8, np.float32)
         self.info = {'arrived': False}
         self.neighbors_embedding = np.zeros(self.number_of_nodes)
+        self.neg_points = deepcopy(self.neg_points_reset)
+        self.neg_df = deepcopy(self.neg_df_reset)
 
         # self._check_origin_goal_distance()
+        self._reset_render()
 
         self.get_default_route()
         self.reference_path_set = set(self.nx_shortest_path)
@@ -506,45 +532,32 @@ class GraphMapEnvV4(gym.Env):
                             assume_unique=True).astype(np.int64)
         return self.mask
 
-    def render(self, mode='human', plot_default=False, plot_learned=True, plot_neg=True, save=True, show=False):
+    def render(self, mode='human', plot_default=False, plot_learned=True, save=False, show=False):
         """
         Renders the environment
         """
         if self.verbose:
             print("Get path", self.path)
         if self.done and plot_default:
-            ox.plot_graph_route(self.reindexed_graph, self.nx_shortest_path,
+            ox.plot_graph_route(self.graph, self.nx_shortest_path,
                                 save=save, filepath=repo_path + "images/default_image.png")
+
         if plot_learned:
-            save = False if plot_neg else save
-            fig, ax = ox.plot_graph_route(
-                self.reindexed_graph, self.path, save=False, filepath=self.render_img_path, show=False, close=False)
-            if plot_neg:
-                self.origin_node = self.nodes[self.origin]
-                goal_df = pd.DataFrame({
-                    "Longitude": [self.goal_node['x'], self.origin_node['x']],
-                    "Latitude": [self.goal_node['y'], self.origin_node['y']]
-                })
-                # plot the origin and goal
-                gdf_goal = geopandas.GeoDataFrame(
-                    goal_df, geometry=geopandas.points_from_xy(goal_df['Longitude'], goal_df['Latitude']))
-                gdf_goal.plot(ax=ax, color='yellow', markersize=20)
-
-                # plot negative points
-                gdf_neg = geopandas.GeoDataFrame(
-                    self.neg_df, geometry=geopandas.points_from_xy(self.neg_df['Longitude'], self.neg_df['Latitude']))
-                gdf_neg.plot(ax=ax, markersize=10,
-                             color="blue", alpha=1, zorder=7)
-
+            node_pair = self.path[-2:]
+            self.plot_line(node_pair)
+            if save:
                 plt.savefig(self.render_img_path)
-                if show:
-                    plt.show()
-                plt.close(fig)
+            if show:
+                plt.show()
 
-        if mode == 'human':
-            pass
-        else:
-            return np.array(fig.canvas.buffer_rgba())
+        return np.array(self.fig.canvas.buffer_rgba())
+
+    def plot_line(self, node_pair):
+        """
+        Plot the line between two nodes
+        """
+        self.ax.plot([self.nodes[node_pair[0]]['x'], self.nodes[node_pair[1]]['x']],
+                     [self.nodes[node_pair[0]]['y'], self.nodes[node_pair[1]]['y']], c='red', marker='o')
 
     def seed(self, seed=None):
         """

@@ -61,7 +61,7 @@ def create_policy_eval_video(env, trainer, filename="eval_video", num_episodes=2
 args = {
     'no_masking': False,
     'run': 'PPO',
-    'stop_iters': 200,  # stop iters for each step
+    'stop_iters': 1,  # stop iters for each step
     'stop_timesteps': 1e+8,
     'stop_episode_reward_mean': 3.0,
     'train': True,
