@@ -2,15 +2,19 @@
 from gym.envs.registration import register
 
 register(
-        id = "graph-map-v0",
-        entry_point="gym_graph_map.envs:GraphMapEnv"
+        id = "graph-map-v1",
+        entry_point="gym_graph_map.envs:GraphMapEnvV1"
         )
 register(
-        id = "graph-map-v1",
+        id = "graph-map-v2",
         entry_point="gym_graph_map.envs:GraphMapEnvV2"
         )
 
 register(
         id = "graph-map-v3",
+        entry_point="gym_graph_map.envs:GraphMapEnvV3"
+        )
+register(
+        id = "graph-map-v4",
         entry_point="gym_graph_map.envs:GraphMapEnvV3"
         )

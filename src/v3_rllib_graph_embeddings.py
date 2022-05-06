@@ -135,17 +135,17 @@ if __name__ == "__main__":
 
     checkpoints = None
     if args['wandb']:
-        cb = WandbLoggerCallback(
+        cb = [WandbLoggerCallback(
             project="graph_map_ray",
             group="ppo_cur_v3_1",
             excludes=["perf"],
-            log_config=False)
+            log_config=False)]
     else:
         cb = None
     if args['train']:
         # run with tune for auto trainer creation, stopping, TensorBoard, etc.
         results = tune.run(args['run'], config=config, stop=stop, verbose=0,
-                           callbacks=[cb],
+                           callbacks=cb,
                            keep_checkpoints_num=1,
                            checkpoint_at_end=True,
                            # search_alg=hyperopt_search,

@@ -24,7 +24,7 @@ INF = 100000000
 home = str(Path.home())
 
 
-class GraphMapEnv(gym.Env):
+class GraphMapEnvV1(gym.Env):
     """
     Custom Environment that follows gym interface
     """

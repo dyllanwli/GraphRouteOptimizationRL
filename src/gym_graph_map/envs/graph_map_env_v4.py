@@ -1,5 +1,12 @@
 # from collections import defaultdict
-
+"""
+Version 4 of the Graph Map Environment with the following changes:
+1. The environment now has a config dict that can be passed to the constructor.
+2. The environment now has a reset_config method that can be called to reset the
+    config dict to its default values.
+3. The environment now has a new state as a sequence as observation space so the model won't have to learn to
+    handle the wrapper stuff.
+"""
 from pathlib import Path
 
 import numpy as np

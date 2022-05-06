@@ -26,7 +26,7 @@ G = nx.relabel.convert_node_labels_to_integers(G, first_label=0, ordering='defau
 # In[28]:
 
 
-model = Node2Vec(dimensions=64, workers=16)
+model = Node2Vec(dimensions=8, workers=16)
 print("Fitting")
 model.fit(G)
 
@@ -35,7 +35,7 @@ X = model.get_embedding()
 
 np.save(output + "_node2vec.npy", X)
 
-model = NetMF()
+model = NetMF(dimensions=8)
 print("Fitting")
 model.fit(G)
 
@@ -47,19 +47,15 @@ np.save(output + "_netmf.npy", X)
 # In[26]:
 
 
-model = FeatherNode(reduction_dimensions=32)
+# model = FeatherNode(reduction_dimensions=32)
 
-print("Fitting")
-model.fit(G, X)
+# print("Fitting")
+# model.fit(G, X)
 
-print("Getting embedding")
-X = model.get_embedding()
+# print("Getting embedding")
+# X = model.get_embedding()
 
-
-# In[27]:
-
-
-np.save(output + "e_netmf_feather_32d.npy", X)
+# np.save(output + "e_netmf_feather_32d.npy", X)
 
 
 # In[ ]:
