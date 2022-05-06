@@ -9,7 +9,7 @@ src/eval_video.mp4
 
 */*/*/__pycache__/*
 src/runs/*
-*.gif
+*/*/*/*.gif
 *.mp4
 
 images/archives/*
