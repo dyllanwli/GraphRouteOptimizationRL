@@ -6,7 +6,7 @@ import osmnx as ox
 import pandas as pd
 import gym
 from gym.spaces import Box, Discrete
-from gym_graph_map.envs.graph_map_env_v2 import GraphMapEnvV2 as GraphMapEnv
+from gym_graph_map.envs.graph_map_env_v4 import GraphMapEnvV4 as GraphMapEnv
 
 # model
 import ray
@@ -61,13 +61,14 @@ def create_policy_eval_video(env, trainer, filename="eval_video", num_episodes=2
 args = {
     'no_masking': False,
     'run': 'PPO',
-    'stop_iters': 500,  # stop iters for each step
+    'stop_iters': 200,  # stop iters for each step
     'stop_timesteps': 1e+8,
     'stop_episode_reward_mean': 3.0,
     'train': True,
     'checkpoint_path': '',
     'wandb': True,
     'framework': 'tf2',
+    'resume_name': '',
 }
 
 if __name__ == "__main__":
@@ -85,18 +86,20 @@ if __name__ == "__main__":
         # 'center_node': (29.72346214336903, -95.38599726549226), # houston
         'threshold': 2900,
         'embedding_path': embedding_dir + "houston_tx_usa_drive_2000_slope_node2vec.npy",
+        'envolving': True, # neg envolving
+        'envolving_freq': 10, # every nth step
     }
     config = {
         "env": GraphMapEnv,
         "env_config": env_config,
         "model": {
             "custom_model": TorchActionMaskModel if args["framework"] == "torch" else ActionMaskModel,
-            "fcnet_hiddens": [256, 512, 1508],
+            "fcnet_hiddens": [256, 512, 256],
             "fcnet_activation": "tanh",
             "use_lstm": False,
-            "dim": 256,
             "max_seq_len": 100,
             "lstm_cell_size": 256,
+            "dim": 128,
             # "use_attention": False,
             # "attention_head_dim": 64,
             # "attention_dim": 256,
@@ -121,7 +124,8 @@ if __name__ == "__main__":
         "lr": 0.0005,  # 0.0003 or 0.0005 seem to work fine as well.
         'exploration_config': {
             "type": "Curiosity",
-            "eta": 0.5,  # tune.grid_search([1.0, 0.5, 0.1]),  # curiosity
+            # tune.grid_search([1.0, 0.5, 0.1]),  # curiosity
+            "eta": 0.5,
             "beta": 0.5,  # tune.grid_search([0.7, 0.5, 0.1]),
             "feature_dim": 256,  # curiosity
             # No actual feature net: map directly from observations to feature vector (linearly).
@@ -160,15 +164,15 @@ if __name__ == "__main__":
     else:
         cb = None
 
-    checkpoints = None
     if args['train']:
-        # run with tune for auto trainer creation, stopping, TensorBoard, etc.
-        results = tune.run(args['run'], config=config, stop=stop, verbose=0,
-                           callbacks=cb,
-                           keep_checkpoints_num=1,
-                           checkpoint_at_end=True,
-                           # search_alg=hyperopt_search,
-                           )
+        if args['resume_name'] != "":
+            results = tune.run(args['run'], stop=stop, verbose=0, callbacks=cb, keep_checkpoints_num=1,
+                               checkpoint_at_end=True, resume=True, name=args['resume_name'])
+        else:
+            results = tune.run(args['run'], config=config, stop=stop, verbose=0, callbacks=cb,
+                               keep_checkpoints_num=1, checkpoint_at_end=True,
+                               # search_alg=hyperopt_search,
+                               )
 
         print("Finished successfully without selecting invalid actions.", results)
 
@@ -177,11 +181,9 @@ if __name__ == "__main__":
         checkpoints = results.get_trial_checkpoints_paths(
             trial, metric="episode_reward_mean")
         print("Best checkpoint:", checkpoints)
+        args['checkpoint_path'] = checkpoints[0][0]
 
-    if checkpoints:
-        checkpoint_path = checkpoints[0][0]
-    else:
-        checkpoint_path = args['checkpoint_path']
+    checkpoint_path = args['checkpoint_path']
     # ppo_config = ppo.DEFAULT_CONFIG.copy()
     # ppo_config.update(config)
     # config['num_workers'] = 0

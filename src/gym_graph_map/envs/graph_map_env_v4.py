@@ -6,6 +6,7 @@ Version 4 of the Graph Map Environment with the following changes:
     config dict to its default values.
 3. The environment now has a new state as a sequence as observation space so the model won't have to learn to
     handle the wrapper stuff.
+4. The environment now has a envolving environment based on a marsh attribute and elevation attribute.
 """
 from pathlib import Path
 
@@ -29,7 +30,8 @@ from ray import tune
 
 repo_path = str(Path.home()) + "/dev/GraphRouteOptimizationRL/"
 
-class GraphMapEnvV2(gym.Env):
+
+class GraphMapEnvV4(gym.Env):
     """
     Custom Environment that follows gym interface
     V2 is the version that uses the compatible with rllib
@@ -151,11 +153,17 @@ class GraphMapEnvV2(gym.Env):
             self.current_distance2neg
         Uncomment self.action_space to update the neighbors if use MaskedSpace
         """
+
         # forward neighbors
         self.neighbors = list(x for x in self.reindexed_graph.neighbors(
             self.current) if x not in self.passed_nodes_ids)
 
+        for n in self.neighbors:
+            self.neighbors_embedding[n] =
+
         # self.action_space.neighbors = self.neighbors
+
+        self.neighbors_
 
         self.current_distance2goal = self._great_circle_vec(
             self.current_node, self.goal_node)
@@ -185,7 +193,7 @@ class GraphMapEnvV2(gym.Env):
         #     0, self.number_of_nodes - len(self.nx_shortest_path)), mode='constant', constant_values=0)
         nx_path_embedding = np.sum(
             [self.embedding[n] for n in np.array(self.nx_shortest_path)], axis=0)
-        
+
         self.current_path_embedding += self.embedding[self.current]
 
         self.state = {
@@ -206,15 +214,14 @@ class GraphMapEnvV2(gym.Env):
         # Constant values
         self.graph = config['graph']
         self.verbose = config['verbose'] if config['verbose'] else False
-        neg_df = pd.read_csv(config['neg_df_path'])
         center_node = config['center_node']
         self.threshold = config['threshold']
         # graph radius or average short path in this graph, sampled by env stat
         self.threshold = 2900
-        self.neg_points = self._get_neg_points(neg_df, center_node)
-
-        if self.neg_points == []:
-            raise ValueError("Negative weights not found")
+        self.neg_points = self._get_neg_points(
+            pd.read_csv(config['neg_df_path']), center_node)
+        self.envolving = config['envolving']
+        self.envolving_freq = config['envolving_freq']
 
         self.avoid_threshold = self.threshold / 7
         self.number_of_nodes = self.graph.number_of_nodes()
@@ -274,7 +281,7 @@ class GraphMapEnvV2(gym.Env):
         """
         neg_nodes = []
         center_node = {'y': center_node[0], 'x': center_node[1]}
-        self.df = pd.DataFrame(columns=df.columns)
+        self.neg_df = pd.DataFrame(columns=['Latitude', 'Longitude', 'weight'])
         index = 0
 
         for _, row in df.iterrows():
@@ -284,7 +291,7 @@ class GraphMapEnvV2(gym.Env):
             # caculate the distance between the node and the center node
             if dist <= self.threshold:
                 neg_nodes.append(node)
-                self.df.loc[index] = row
+                self.neg_df.loc[index] = [row[0], row[1], row[2]]
                 index += 1
         return neg_nodes
 
@@ -325,6 +332,22 @@ class GraphMapEnvV2(gym.Env):
             if dist < closest_dist:
                 closest_dist = dist
         return closest_dist
+
+    def _envolving(self):
+        """
+        Envolving
+        """
+        # TODO: choice with elevation
+        if self.envolving and self.current_step % self.envolving_freq == 0:
+            envolving_node = self.graph.nodes[np.random.choice(
+                self.number_of_nodes)]
+            node = {'y': envolving_node['y'],
+                    'x': envolving_node['x'], 'weight': 10}
+            self.neg_points.append(node)
+            series = pd.Series(
+                [envolving_node['y'], envolving_node['x'], 10])
+            self.neg_df = pd.concat(
+                [self.neg_df, series.to_frame().T], ignore_index=True)
 
     def _reward(self):
         """
@@ -380,6 +403,8 @@ class GraphMapEnvV2(gym.Env):
         self.current_step += 1
         self.path.append(self.current)
         self.passed_nodes_ids.add(self.current)
+
+        self._envolving()
 
         if self.verbose:
             print("self.path:", self.path)
@@ -455,6 +480,7 @@ class GraphMapEnvV2(gym.Env):
         self.neighbors = []
         self.current_path_embedding = np.zeros(8, np.float32)
         self.info = {'arrived': False}
+        self.neighbors_embedding = np.zeros(self.number_of_nodes)
 
         # self._check_origin_goal_distance()
 
@@ -506,7 +532,7 @@ class GraphMapEnvV2(gym.Env):
 
                 # plot negative points
                 gdf_neg = geopandas.GeoDataFrame(
-                    self.df, geometry=geopandas.points_from_xy(self.df['Longitude'], self.df['Latitude']))
+                    self.neg_df, geometry=geopandas.points_from_xy(self.neg_df['Longitude'], self.neg_df['Latitude']))
                 gdf_neg.plot(ax=ax, markersize=10,
                              color="blue", alpha=1, zorder=7)
 
