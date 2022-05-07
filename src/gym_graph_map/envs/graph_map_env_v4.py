@@ -7,6 +7,7 @@ Version 4 of the Graph Map Environment with the following changes:
 3. The environment now has a new state as a sequence as observation space so the model won't have to learn to
     handle the wrapper stuff.
 4. The environment now has a envolving environment based on a marsh attribute and elevation attribute.
+5. The environment now has a a better render mode.
 """
 from copy import deepcopy
 from pathlib import Path
@@ -20,14 +21,12 @@ from osmnx import distance
 import pandas as pd
 import wandb
 # for plotting
-import geopandas
 import matplotlib.pyplot as plt
 
 # for reinforcement learning environment
 import gym
 from gym import spaces
 from gym.utils import seeding
-from ray import tune
 
 repo_path = str(Path.home()) + "/dev/GraphRouteOptimizationRL/"
 
@@ -218,7 +217,7 @@ class GraphMapEnvV4(gym.Env):
         self.threshold = config['threshold']
         # graph radius or average short path in this graph, sampled by env stat
         self.threshold = 2900
-        self.neg_points_reset, self.neg_df_reset = self._get_neg_points(
+        self.neg_points_reset = self._get_neg_points(
             pd.read_csv(config['neg_df_path']), center_node)
 
         self.envolving = config['envolving']
@@ -288,7 +287,6 @@ class GraphMapEnvV4(gym.Env):
         """
         neg_nodes = []
         center_node = {'y': center_node[0], 'x': center_node[1]}
-        neg_df = pd.DataFrame(columns=['Latitude', 'Longitude', 'weight'])
         index = 0
 
         for _, row in df.iterrows():
@@ -298,9 +296,8 @@ class GraphMapEnvV4(gym.Env):
             # caculate the distance between the node and the center node
             if dist <= self.threshold:
                 neg_nodes.append(node)
-                neg_df.loc[index] = [row[0], row[1], row[2]]
                 index += 1
-        return neg_nodes, neg_df
+        return neg_nodes
 
     def _great_circle_vec(self, node1, node2):
         """
@@ -351,10 +348,6 @@ class GraphMapEnvV4(gym.Env):
             node = {'y': envolving_node['y'],
                     'x': envolving_node['x'], 'weight': 5}
             self.neg_points.append(node)
-            series = pd.Series(
-                [envolving_node['y'], envolving_node['x'], 10], index=self.neg_df.columns)
-            self.neg_df = pd.concat(
-                [self.neg_df, series.to_frame().T], ignore_index=True)
 
     def _reward(self):
         """
@@ -412,7 +405,6 @@ class GraphMapEnvV4(gym.Env):
         self.passed_nodes_ids.add(self.current)
 
         self._envolving()
-        print(self.neg_df.shape)
 
         if self.verbose:
             print("self.path:", self.path)
@@ -478,9 +470,6 @@ class GraphMapEnvV4(gym.Env):
             self.origin_node['x'], self.origin_node['y'], c='yellow', marker='o', markersize=5)
         self.ax.plot(self.goal_node['x'], self.goal_node['y'],
                      c='yellow', marker='o', markersize=5)
-        for node in self.neg_points:
-            self.ax.plot(node['x'], node['y'], c='blue',
-                         marker='o', markersize=5)
 
     def reset(self):
         """
@@ -505,10 +494,9 @@ class GraphMapEnvV4(gym.Env):
         self.info = {'arrived': False}
         self.neighbors_embedding = np.zeros(self.number_of_nodes)
         self.neg_points = deepcopy(self.neg_points_reset)
-        self.neg_df = deepcopy(self.neg_df_reset)
 
         # self._check_origin_goal_distance()
-        self._reset_render()
+        # self._reset_render()
 
         self.get_default_route()
         self.reference_path_set = set(self.nx_shortest_path)
@@ -532,7 +520,7 @@ class GraphMapEnvV4(gym.Env):
                             assume_unique=True).astype(np.int64)
         return self.mask
 
-    def render(self, mode='human', plot_default=False, plot_learned=True, save=False, show=False):
+    def render(self, mode='human', plot_default=False, save=False, show=False):
         """
         Renders the environment
         """
@@ -542,13 +530,18 @@ class GraphMapEnvV4(gym.Env):
             ox.plot_graph_route(self.graph, self.nx_shortest_path,
                                 save=save, filepath=repo_path + "images/default_image.png")
 
-        if plot_learned:
-            node_pair = self.path[-2:]
-            self.plot_line(node_pair)
-            if save:
-                plt.savefig(self.render_img_path)
-            if show:
-                plt.show()
+        # plot negative points
+        for node in self.neg_points:
+            self.ax.plot(node['x'], node['y'], c='blue',
+                         marker='o', markersize=5)
+
+        self.plot_line(self.path[-2:])
+
+        if save:
+            self.fig.savefig(self.render_img_path)
+
+        if show and mode == 'human':
+            self.fig.canvas.draw()
 
         return np.array(self.fig.canvas.buffer_rgba())
 
@@ -557,7 +550,7 @@ class GraphMapEnvV4(gym.Env):
         Plot the line between two nodes
         """
         self.ax.plot([self.nodes[node_pair[0]]['x'], self.nodes[node_pair[1]]['x']],
-                     [self.nodes[node_pair[0]]['y'], self.nodes[node_pair[1]]['y']], c='red', marker='o')
+                     [self.nodes[node_pair[0]]['y'], self.nodes[node_pair[1]]['y']], c='red', marker='o', markersize=1)
 
     def seed(self, seed=None):
         """

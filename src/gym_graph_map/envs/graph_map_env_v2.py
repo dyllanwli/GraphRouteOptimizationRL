@@ -1,5 +1,15 @@
 # from collections import defaultdict
-
+"""
+Version 4 of the Graph Map Environment with the following changes:
+1. The environment now has a config dict that can be passed to the constructor.
+2. The environment now has a reset_config method that can be called to reset the
+    config dict to its default values.
+3. The environment now has a new state as a sequence as observation space so the model won't have to learn to
+    handle the wrapper stuff.
+4. The environment now has a envolving environment based on a marsh attribute and elevation attribute.
+5. The environment now has a a better render mode.
+"""
+from copy import deepcopy
 from pathlib import Path
 
 import numpy as np
@@ -11,18 +21,17 @@ from osmnx import distance
 import pandas as pd
 import wandb
 # for plotting
-import geopandas
 import matplotlib.pyplot as plt
 
 # for reinforcement learning environment
 import gym
 from gym import spaces
 from gym.utils import seeding
-from ray import tune
 
 repo_path = str(Path.home()) + "/dev/GraphRouteOptimizationRL/"
 
-class GraphMapEnvV2(gym.Env):
+
+class GraphMapEnvV4(gym.Env):
     """
     Custom Environment that follows gym interface
     V2 is the version that uses the compatible with rllib
@@ -132,7 +141,7 @@ class GraphMapEnvV2(gym.Env):
             "action_mask": spaces.Box(low=0, high=1, shape=(self.number_of_nodes,), dtype=np.int64),
         })
 
-        # self.adj = nx.to_numpy_array(self.reindexed_graph, weight="None", dtype=np.float32)
+        # self.adj = nx.to_numpy_array(self.graph, weight="None", dtype=np.float32)
 
     def _update_state(self):
         """
@@ -144,17 +153,22 @@ class GraphMapEnvV2(gym.Env):
             self.current_distance2neg
         Uncomment self.action_space to update the neighbors if use MaskedSpace
         """
+
         # forward neighbors
-        self.neighbors = list(x for x in self.reindexed_graph.neighbors(
+        self.neighbors = list(x for x in self.graph.neighbors(
             self.current) if x not in self.passed_nodes_ids)
 
+        # for n in self.neighbors:
+
         # self.action_space.neighbors = self.neighbors
+
+        # self.neighbors_
 
         self.current_distance2goal = self._great_circle_vec(
             self.current_node, self.goal_node)
 
-        self.current_distance2neg = self._get_closest_distance_neg(
-            self.current_node)
+        self.current_distance2neg = max(10, self._get_closest_distance_neg(
+            self.current_node))  # make sure log won't be 0
 
         if self.verbose:
             print(self.current, "'s neighbors: ", self.neighbors)
@@ -178,7 +192,7 @@ class GraphMapEnvV2(gym.Env):
         #     0, self.number_of_nodes - len(self.nx_shortest_path)), mode='constant', constant_values=0)
         nx_path_embedding = np.sum(
             [self.embedding[n] for n in np.array(self.nx_shortest_path)], axis=0)
-        
+
         self.current_path_embedding += self.embedding[self.current]
 
         self.state = {
@@ -199,15 +213,15 @@ class GraphMapEnvV2(gym.Env):
         # Constant values
         self.graph = config['graph']
         self.verbose = config['verbose'] if config['verbose'] else False
-        neg_df = pd.read_csv(config['neg_df_path'])
         center_node = config['center_node']
         self.threshold = config['threshold']
         # graph radius or average short path in this graph, sampled by env stat
         self.threshold = 2900
-        self.neg_points = self._get_neg_points(neg_df, center_node)
+        self.neg_points_reset = self._get_neg_points(
+            pd.read_csv(config['neg_df_path']), center_node)
 
-        if self.neg_points == []:
-            raise ValueError("Negative weights not found")
+        self.envolving = config['envolving']
+        self.envolving_freq = config['envolving_freq']
 
         self.avoid_threshold = self.threshold / 7
         self.number_of_nodes = self.graph.number_of_nodes()
@@ -219,6 +233,12 @@ class GraphMapEnvV2(gym.Env):
 
         # utility values
         self.render_img_path = repo_path + "images/render_img.png"
+
+    def _get_neighbors_embeddings(self):
+        """
+        Returns the embeddings of the neighbors
+        """
+        pass
 
     def _set_utility_function(self):
         """
@@ -246,14 +266,14 @@ class GraphMapEnvV2(gym.Env):
         node_dict: {151820557: 0}
         node_dict_reversed: {0: 151820557}
         """
-        self.reindexed_graph = nx.relabel.convert_node_labels_to_integers(
+        self.graph = nx.relabel.convert_node_labels_to_integers(
             graph, first_label=0, ordering='default')
 
         # self.node_dict = {node: i for i, node in enumerate(graph.nodes(data=False))}
 
         # self.node_dict_reversed = {i: node for node, i in self.node_dict.items()}
 
-        self.nodes = self.reindexed_graph.nodes()
+        self.nodes = self.graph.nodes()
 
     def _get_neg_points(self, df, center_node):
         """
@@ -267,7 +287,6 @@ class GraphMapEnvV2(gym.Env):
         """
         neg_nodes = []
         center_node = {'y': center_node[0], 'x': center_node[1]}
-        self.df = pd.DataFrame(columns=df.columns)
         index = 0
 
         for _, row in df.iterrows():
@@ -277,7 +296,6 @@ class GraphMapEnvV2(gym.Env):
             # caculate the distance between the node and the center node
             if dist <= self.threshold:
                 neg_nodes.append(node)
-                self.df.loc[index] = row
                 index += 1
         return neg_nodes
 
@@ -299,10 +317,10 @@ class GraphMapEnvV2(gym.Env):
         Updates the path length and travel time
         """
         self.path_length += ox.utils_graph.get_route_edge_attributes(
-            self.reindexed_graph, self.path[-2:], "length")[0]
+            self.graph, self.path[-2:], "length")[0]
 
         self.travel_time += ox.utils_graph.get_route_edge_attributes(
-            self.reindexed_graph, self.path[-2:], "travel_time")[0]
+            self.graph, self.path[-2:], "travel_time")[0]
 
     def _get_closest_distance_neg(self, node):
         """
@@ -318,6 +336,18 @@ class GraphMapEnvV2(gym.Env):
             if dist < closest_dist:
                 closest_dist = dist
         return closest_dist
+
+    def _envolving(self):
+        """
+        Envolving
+        """
+        # TODO: choice with elevation
+        if self.envolving and self.current_step % self.envolving_freq == 0:
+            envolving_node = self.graph.nodes[np.random.choice(
+                self.number_of_nodes)]
+            node = {'y': envolving_node['y'],
+                    'x': envolving_node['x'], 'weight': 5}
+            self.neg_points.append(node)
 
     def _reward(self):
         """
@@ -374,6 +404,8 @@ class GraphMapEnvV2(gym.Env):
         self.path.append(self.current)
         self.passed_nodes_ids.add(self.current)
 
+        self._envolving()
+
         if self.verbose:
             print("self.path:", self.path)
 
@@ -402,14 +434,14 @@ class GraphMapEnvV2(gym.Env):
         """
         try:
             self.nx_shortest_path = nx.shortest_path(
-                self.reindexed_graph, source=self.origin, target=self.goal, weight="length")
+                self.graph, source=self.origin, target=self.goal, weight="length")
             self.nx_shortest_path_length = sum(ox.utils_graph.get_route_edge_attributes(
-                self.reindexed_graph, self.nx_shortest_path, "length"))
+                self.graph, self.nx_shortest_path, "length"))
 
             self.nx_shortest_travel_time = nx.shortest_path(
-                self.reindexed_graph, source=self.origin, target=self.goal, weight="travel_time")
+                self.graph, source=self.origin, target=self.goal, weight="travel_time")
             self.nx_shortest_travel_time_length = sum(ox.utils_graph.get_route_edge_attributes(
-                self.reindexed_graph, self.nx_shortest_travel_time, "travel_time"))
+                self.graph, self.nx_shortest_travel_time, "travel_time"))
         except nx.exception.NetworkXNoPath:
             if self.verbose:
                 print("No path found for default route. Restting...")
@@ -426,6 +458,18 @@ class GraphMapEnvV2(gym.Env):
             if self.verbose:
                 print("The distance between origin and goal is too close, resetting...")
             self.reset()
+
+    def _reset_render(self):
+        """
+        Reset the render
+        """
+        # plotting base map
+        self.fig, self.ax = ox.plot_graph(self.graph, show=False, close=False)
+        self.origin_node = self.nodes[self.origin]
+        self.ax.plot(
+            self.origin_node['x'], self.origin_node['y'], c='yellow', marker='o', markersize=5)
+        self.ax.plot(self.goal_node['x'], self.goal_node['y'],
+                     c='yellow', marker='o', markersize=5)
 
     def reset(self):
         """
@@ -448,8 +492,11 @@ class GraphMapEnvV2(gym.Env):
         self.neighbors = []
         self.current_path_embedding = np.zeros(8, np.float32)
         self.info = {'arrived': False}
+        self.neighbors_embedding = np.zeros(self.number_of_nodes)
+        self.neg_points = deepcopy(self.neg_points_reset)
 
         # self._check_origin_goal_distance()
+        # self._reset_render()
 
         self.get_default_route()
         self.reference_path_set = set(self.nx_shortest_path)
@@ -473,45 +520,37 @@ class GraphMapEnvV2(gym.Env):
                             assume_unique=True).astype(np.int64)
         return self.mask
 
-    def render(self, mode='human', plot_default=False, plot_learned=True, plot_neg=True, save=True, show=False):
+    def render(self, mode='human', plot_default=False, save=False, show=False):
         """
         Renders the environment
         """
         if self.verbose:
             print("Get path", self.path)
         if self.done and plot_default:
-            ox.plot_graph_route(self.reindexed_graph, self.nx_shortest_path,
+            ox.plot_graph_route(self.graph, self.nx_shortest_path,
                                 save=save, filepath=repo_path + "images/default_image.png")
-        if plot_learned:
-            save = False if plot_neg else save
-            fig, ax = ox.plot_graph_route(
-                self.reindexed_graph, self.path, save=False, filepath=self.render_img_path, show=False, close=False)
-            if plot_neg:
-                self.origin_node = self.nodes[self.origin]
-                goal_df = pd.DataFrame({
-                    "Longitude": [self.goal_node['x'], self.origin_node['x']],
-                    "Latitude": [self.goal_node['y'], self.origin_node['y']]
-                })
-                # plot the origin and goal
-                gdf_goal = geopandas.GeoDataFrame(
-                    goal_df, geometry=geopandas.points_from_xy(goal_df['Longitude'], goal_df['Latitude']))
-                gdf_goal.plot(ax=ax, color='yellow', markersize=20)
 
-                # plot negative points
-                gdf_neg = geopandas.GeoDataFrame(
-                    self.df, geometry=geopandas.points_from_xy(self.df['Longitude'], self.df['Latitude']))
-                gdf_neg.plot(ax=ax, markersize=10,
-                             color="blue", alpha=1, zorder=7)
+        # plot negative points
+        for node in self.neg_points:
+            self.ax.plot(node['x'], node['y'], c='blue',
+                         marker='o', markersize=5)
 
-                plt.savefig(self.render_img_path)
-                if show:
-                    plt.show()
-                plt.close(fig)
+        self.plot_line(self.path[-2:])
 
-        if mode == 'human':
-            pass
-        else:
-            return np.array(fig.canvas.buffer_rgba())
+        if save:
+            self.fig.savefig(self.render_img_path)
+
+        if show and mode == 'human':
+            self.fig.canvas.draw()
+
+        return np.array(self.fig.canvas.buffer_rgba())
+
+    def plot_line(self, node_pair):
+        """
+        Plot the line between two nodes
+        """
+        self.ax.plot([self.nodes[node_pair[0]]['x'], self.nodes[node_pair[1]]['x']],
+                     [self.nodes[node_pair[0]]['y'], self.nodes[node_pair[1]]['y']], c='red', marker='o', markersize=1)
 
     def seed(self, seed=None):
         """
