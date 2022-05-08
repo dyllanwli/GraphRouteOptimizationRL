@@ -31,6 +31,12 @@ from gym.utils import seeding
 repo_path = str(Path.home()) + "/dev/GraphRouteOptimizationRL/"
 
 
+def index_finder(lst, item):
+    try:
+        return lst.index(item, 0)
+    except ValueError:
+        return -1
+
 class GraphMapEnvV4(gym.Env):
     """
     Custom Environment that follows gym interface
@@ -95,19 +101,22 @@ class GraphMapEnvV4(gym.Env):
 
         diff_embedding_low = np.full(
             shape=(self.embedding_dim,), fill_value=-np.inf)
-        # nx_path_references_low = np.zeros(self.number_of_nodes)
-        nx_path_embedding_low = np.full(
-            shape=(self.embedding_dim,), fill_value=-np.inf)
 
-        current_path_embedding_low = np.full(
-            shape=(self.embedding_dim,), fill_value=-np.inf)
+        nx_embeddings_low = np.zeros(self.number_of_nodes)
+
+        length_embeddings_low = np.zeros(self.number_of_nodes)
+        # nx_path_embedding_low = np.full(
+        #     shape=(self.embedding_dim,), fill_value=-np.inf)
+
+        # current_path_embedding_low = np.full(
+        #     shape=(self.embedding_dim,), fill_value=-np.inf)
 
         obs_low = np.hstack((
             state_low,
+            nx_embeddings_low,
+            length_embeddings_low,
             current_embedding_low,
             diff_embedding_low,
-            nx_path_embedding_low,
-            current_path_embedding_low,
         ))
 
         # set observation space high
@@ -119,21 +128,27 @@ class GraphMapEnvV4(gym.Env):
         diff_embedding_high = np.full(
             shape=(self.embedding_dim,), fill_value=np.inf)
 
+        nx_embeddings_high = np.full(
+            shape=(self.number_of_nodes,), fill_value=self.number_of_nodes)
+
+        length_embeddings_high = np.full(
+            shape=(self.number_of_nodes,), fill_value=np.inf)
+
         # nx_path_referenes_high = np.full(
         #     shape=(self.number_of_nodes, ), fill_value=self.number_of_nodes)
 
-        nx_path_embedding_high = np.full(
-            shape=(self.embedding_dim,), fill_value=np.inf)
+        # nx_path_embedding_high = np.full(
+        #     shape=(self.embedding_dim,), fill_value=np.inf)
 
-        current_path_embedding_high = np.full(
-            shape=(self.embedding_dim,), fill_value=np.inf)
+        # current_path_embedding_high = np.full(
+        #     shape=(self.embedding_dim,), fill_value=np.inf)
 
         obs_high = np.hstack((
             state_high,
+            nx_embeddings_high,
+            length_embeddings_high,
             current_embedding_high,
             diff_embedding_high,
-            nx_path_embedding_high,
-            current_path_embedding_high,
         ))
 
         self.observation_space = spaces.Dict({
@@ -158,12 +173,6 @@ class GraphMapEnvV4(gym.Env):
         self.neighbors = list(x for x in self.graph.neighbors(
             self.current) if x not in self.passed_nodes_ids)
 
-        # for n in self.neighbors:
-
-        # self.action_space.neighbors = self.neighbors
-
-        # self.neighbors_
-
         self.current_distance2goal = self._great_circle_vec(
             self.current_node, self.goal_node)
 
@@ -187,21 +196,16 @@ class GraphMapEnvV4(gym.Env):
             self.nx_shortest_path_length,
         ], dtype=np.float32)
 
-        # set references
-        # nx_path_references = np.pad(np.array(self.nx_shortest_path), pad_width=(
-        #     0, self.number_of_nodes - len(self.nx_shortest_path)), mode='constant', constant_values=0)
-        nx_path_embedding = np.sum(
-            [self.embedding[n] for n in np.array(self.nx_shortest_path)], axis=0)
-
-        self.current_path_embedding += self.embedding[self.current]
+        nx_embeddings, length_embeddings = self._get_embeddings(
+            u=self.current, neighbors=self.neighbors)
 
         self.state = {
             "observations": np.hstack((
                 state,
+                nx_embeddings,
+                length_embeddings,
                 self.embedding[self.current],
                 self.embedding[self.goal] - self.embedding[self.current],
-                nx_path_embedding,
-                self.current_path_embedding,
             )),
             "action_mask": self.action_masks(),
         }
@@ -215,6 +219,7 @@ class GraphMapEnvV4(gym.Env):
         self.verbose = config['verbose'] if config['verbose'] else False
         center_node = config['center_node']
         self.threshold = config['threshold']
+        self.nblock = config['nblock']
         # graph radius or average short path in this graph, sampled by env stat
         self.threshold = 2900
         self.neg_points_reset = self._get_neg_points(
@@ -234,11 +239,40 @@ class GraphMapEnvV4(gym.Env):
         # utility values
         self.render_img_path = repo_path + "images/render_img.png"
 
-    def _get_neighbors_embeddings(self):
+    def _get_embeddings(self, u, neighbors):
         """
         Returns the embeddings of the neighbors
         """
-        pass
+        nx_embeddings = np.zeros(self.number_of_nodes)
+        length_embeddings = np.zeros(self.number_of_nodes)
+        # speed_embeddings = np.zeros(self.number_of_nodes)
+        # travel_time_embeddings = np.zeros(self.number_of_nodes)
+        # grade_embeddings = np.zeros(self.number_of_nodes)
+
+        for v in neighbors:
+            length_embeddings[v] = self.graph[u][v][0]['length']
+            # speed_embeddings[v] = self.graph[u][v][0]['speed_kph']
+            # travel_time_embeddings[v] = self.graph[u][v][0]['travel_time']
+            # grade_embeddings[v] = self.graph[u][v][0]['grade']
+        for v in neighbors:
+            length_embeddings = self._get_nested_embeddings(
+                v, length_embeddings, 'length')
+
+        for idx, p in enumerate(self.reference_path):
+            nx_embeddings[p] = idx
+
+        return nx_embeddings, length_embeddings
+
+    def _get_nested_embeddings(self, u, embeddings, weight='length'):
+        """
+        Returns the nested embeddings of the neighbors
+        """
+        neighbors = list(x for x in self.graph.neighbors(
+            u) if x not in self.passed_nodes_ids)
+        for v in neighbors:
+            embeddings[v] = min(self.graph[u][v][0][weight] + embeddings[u], embeddings[v]
+                                ) if embeddings[v] != 0 else self.graph[u][v][0][weight] + embeddings[u]
+        return embeddings
 
     def _set_utility_function(self):
         """
@@ -322,6 +356,10 @@ class GraphMapEnvV4(gym.Env):
         self.travel_time += ox.utils_graph.get_route_edge_attributes(
             self.graph, self.path[-2:], "travel_time")[0]
 
+        self.ref_idx = index_finder(self.reference_path, self.current)
+        if self.ref_idx > -1:
+            self.reference_path = self.reference_path[self.ref_idx + 1:]
+
     def _get_closest_distance_neg(self, node):
         """
         Computes the closest distance to the negative points
@@ -374,9 +412,8 @@ class GraphMapEnvV4(gym.Env):
         # r3 = r2 * self.tanh(self.path_length) # v0
         r3 = r2 * (self.nx_shortest_path_length / self.path_length)  # v1
 
-        if self.current in self.reference_path_set:
+        if self.ref_idx > -1:
             r4 = self.reference_reward
-            self.reference_path_set.remove(self.current)
         else:
             r4 = 0.0
 
@@ -428,7 +465,7 @@ class GraphMapEnvV4(gym.Env):
         else:
             return np.int64(np.random.choice(self.neighbors))
 
-    def get_default_route(self):
+    def get_default_route(self, travel_time=False):
         """
         Set the default route by tratitional method
         """
@@ -437,11 +474,11 @@ class GraphMapEnvV4(gym.Env):
                 self.graph, source=self.origin, target=self.goal, weight="length")
             self.nx_shortest_path_length = sum(ox.utils_graph.get_route_edge_attributes(
                 self.graph, self.nx_shortest_path, "length"))
-
-            self.nx_shortest_travel_time = nx.shortest_path(
-                self.graph, source=self.origin, target=self.goal, weight="travel_time")
-            self.nx_shortest_travel_time_length = sum(ox.utils_graph.get_route_edge_attributes(
-                self.graph, self.nx_shortest_travel_time, "travel_time"))
+            if travel_time:
+                self.nx_shortest_travel_time = nx.shortest_path(
+                    self.graph, source=self.origin, target=self.goal, weight="travel_time")
+                self.nx_shortest_travel_time_length = sum(ox.utils_graph.get_route_edge_attributes(
+                    self.graph, self.nx_shortest_travel_time, "travel_time"))
         except nx.exception.NetworkXNoPath:
             if self.verbose:
                 print("No path found for default route. Restting...")
@@ -471,6 +508,13 @@ class GraphMapEnvV4(gym.Env):
         self.ax.plot(self.goal_node['x'], self.goal_node['y'],
                      c='yellow', marker='o', markersize=5)
 
+    def _reset_embeddings(self):
+        """
+        Reset the embeddings
+        """
+
+        self.current_path_embedding = np.zeros(8, np.float32)
+
     def reset(self):
         """
         Resets the environment
@@ -490,17 +534,16 @@ class GraphMapEnvV4(gym.Env):
         self.path_length = 0.0
         self.travel_time = 0.0
         self.neighbors = []
-        self.current_path_embedding = np.zeros(8, np.float32)
         self.info = {'arrived': False}
-        self.neighbors_embedding = np.zeros(self.number_of_nodes)
+
         self.neg_points = deepcopy(self.neg_points_reset)
 
         # self._check_origin_goal_distance()
-        # self._reset_render()
+        self._reset_embeddings()
 
         self.get_default_route()
-        self.reference_path_set = set(self.nx_shortest_path)
-        self.reference_reward = 1/len(self.reference_path_set)
+        self.reference_reward = 1/len(self.nx_shortest_path)
+        self.reference_path = deepcopy(self.nx_shortest_path)
 
         self._update_state()
         if self.neighbors == [] or \

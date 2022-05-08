@@ -65,7 +65,7 @@ args = {
     'stop_iters': 1000,  # stop iters for each step
     'stop_timesteps': 1e+8,
     'stop_episode_reward_mean': 3.0,
-    'train': False,
+    'train': True,
     'checkpoint_path': '/h/diya.li/ray_results/PPO/PPO_GraphMapEnvV4_15115_00000_0_2022-05-06_12-43-49/checkpoint_001000/checkpoint-1000',
     'wandb': True,
     'framework': 'tf2',
@@ -86,6 +86,7 @@ if __name__ == "__main__":
         'center_node': (29.764050, -95.393030),  # sample
         # 'center_node': (29.72346214336903, -95.38599726549226), # houston
         'threshold': 2900,
+        'nblock': 2,
         'embedding_path': embedding_dir + "houston_tx_usa_drive_2000_slope_node2vec.npy",
         'envolving': False, # neg envolving
         'envolving_freq': 50, # every nth step

@@ -31,7 +31,7 @@ from gym.utils import seeding
 repo_path = str(Path.home()) + "/dev/GraphRouteOptimizationRL/"
 
 
-class GraphMapEnvV4(gym.Env):
+class GraphMapEnvV2(gym.Env):
     """
     Custom Environment that follows gym interface
     V2 is the version that uses the compatible with rllib
@@ -561,7 +561,6 @@ class GraphMapEnvV4(gym.Env):
 
     def close(self) -> None:
         return super().close()
-
 
 # class MaskedDiscreteAction(spaces.Discrete):
 #     def __init__(self, n):
