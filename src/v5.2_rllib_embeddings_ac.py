@@ -64,7 +64,7 @@ def create_policy_eval_video(env, trainer, filename="eval_video", num_episodes=2
 
 args = {
     'no_masking': False,
-    'run': 'A3C',
+    'run': 'A2C',
     'stop_iters': 500,  # stop iters for each step
     'stop_timesteps': 1e+8,
     'stop_episode_reward_mean': 2.0,
@@ -119,7 +119,7 @@ if __name__ == "__main__":
         "num_cpus_per_worker": 2,
         "num_envs_per_worker": 1,
         "simple_optimizer": True,
-        "num_workers": 20,  # 0 for curiosity
+        "num_workers": 10,  # 0 for curiosity
 
         "eager_tracing": True,
         "eager_max_retraces": None,
@@ -144,9 +144,9 @@ if __name__ == "__main__":
             # Hyperparameter to choose between exploration and exploitation. A higher value of beta adds
             # more importance to the intrinsic reward, as per the following equation
             # `reward = r + beta * intrinsic_reward`
-            "beta": 1,
+            "beta": 0.2,
             # Schedule to use for beta decay, one of constant" or "linear_decay".
-            "beta_schedule": 'linear_decay',
+            "beta_schedule": 'constant',
             # Specify, which exploration sub-type to use (usually, the algo's "default"
             # exploration, e.g. EpsilonGreedy for DQN, StochasticSampling for PG/SAC).
             "sub_exploration": {
@@ -196,7 +196,7 @@ if __name__ == "__main__":
     # ppo_config.update(config)
     # config['num_workers'] = 0
     config['num_envs_per_worker'] = 1
-    trainer = a3c.A3CTrainer(config=config, env=GraphMapEnv)
+    trainer = a3c.A2CTrainer(config=config, env=GraphMapEnv)
 
     trainer.restore(checkpoint_path)
     env = GraphMapEnv(config["env_config"])

@@ -1,12 +1,5 @@
 # GraphRouteOptimizationRL
-
-# preprocess
-- use `env_stat` to analysis the osmnx map with nx shortest path function as random policy analysis
-
-# Usage
-- Check `/src/gym_graph_map` to use our osmnx openai gym environment 
-
-
+Not finished yet, stay tune. 
 # demo
 
 ![demo images](images/example/eval_video.gif)
