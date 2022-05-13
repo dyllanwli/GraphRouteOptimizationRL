@@ -16,5 +16,9 @@ register(
         )
 register(
         id = "graph-map-v4",
-        entry_point="gym_graph_map.envs:GraphMapEnvV3"
+        entry_point="gym_graph_map.envs:GraphMapEnvV4"
+        )
+register(
+        id = "graph-map-v5",
+        entry_point="gym_graph_map.envs:GraphMapEnvV5"
         )

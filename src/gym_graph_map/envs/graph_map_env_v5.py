@@ -29,7 +29,10 @@ from gym import spaces
 from gym.utils import seeding
 
 repo_path = str(Path.home()) + "/dev/GraphRouteOptimizationRL/"
-
+directions = ("North", "Northeast", "East", "Southeast",
+              "South", "Southwest", "West", "Northwest")
+reverse_directions_dict = {i: d for i, d in enumerate(directions)}
+directions_dict = {d: i for i, d in enumerate(directions)}
 
 def index_finder(lst, item):
     try:
@@ -37,8 +40,7 @@ def index_finder(lst, item):
     except ValueError:
         return -1
 
-
-class GraphMapEnvV4(gym.Env):
+class GraphMapEnvV5(gym.Env):
     """
     Custom Environment that follows gym interface
     V2 is the version that uses the compatible with rllib
@@ -97,15 +99,19 @@ class GraphMapEnvV4(gym.Env):
         state_low = np.zeros(8)
         assert self.embedding_dim == 8
 
+        nx_embeddings_low = np.zeros(self.number_of_nodes)
+
+        length_embeddings_low = np.zeros(self.number_of_nodes)
+
+        neg_embeddings_low = np.zeros(self.number_of_nodes)
+
+        goal_embeddings_low = np.zeros(self.number_of_nodes)
+
         current_embedding_low = np.full(
             shape=(self.embedding_dim,), fill_value=-np.inf)
 
         diff_embedding_low = np.full(
             shape=(self.embedding_dim,), fill_value=-np.inf)
-
-        nx_embeddings_low = np.zeros(self.number_of_nodes)
-
-        length_embeddings_low = np.zeros(self.number_of_nodes)
         # nx_path_embedding_low = np.full(
         #     shape=(self.embedding_dim,), fill_value=-np.inf)
 
@@ -113,9 +119,10 @@ class GraphMapEnvV4(gym.Env):
         #     shape=(self.embedding_dim,), fill_value=-np.inf)
 
         obs_low = np.hstack((
-            state_low,
             nx_embeddings_low,
             length_embeddings_low,
+            neg_embeddings_low,
+            goal_embeddings_low,
             current_embedding_low,
             diff_embedding_low,
         ))
@@ -123,17 +130,23 @@ class GraphMapEnvV4(gym.Env):
         # set observation space high
         state_high = np.full(shape=(8,), fill_value=np.inf)
 
+        length_embeddings_high = np.full(
+            shape=(self.number_of_nodes,), fill_value=np.inf)
+
+        nx_embeddings_high = np.full(
+            shape=(self.number_of_nodes,), fill_value=self.number_of_nodes)
+
+        neg_embeddings_high = np.full(
+            shape=(self.number_of_nodes,), fill_value=np.inf)
+
+        goal_embeddings_high = np.full(
+            shape=(self.number_of_nodes,), fill_value=np.inf)
+
         current_embedding_high = np.full(
             shape=(self.embedding_dim,), fill_value=np.inf)
 
         diff_embedding_high = np.full(
             shape=(self.embedding_dim,), fill_value=np.inf)
-
-        nx_embeddings_high = np.full(
-            shape=(self.number_of_nodes,), fill_value=self.number_of_nodes)
-
-        length_embeddings_high = np.full(
-            shape=(self.number_of_nodes,), fill_value=np.inf)
 
         # nx_path_referenes_high = np.full(
         #     shape=(self.number_of_nodes, ), fill_value=self.number_of_nodes)
@@ -145,9 +158,10 @@ class GraphMapEnvV4(gym.Env):
         #     shape=(self.embedding_dim,), fill_value=np.inf)
 
         obs_high = np.hstack((
-            state_high,
             nx_embeddings_high,
             length_embeddings_high,
+            neg_embeddings_high,
+            goal_embeddings_high,
             current_embedding_high,
             diff_embedding_high,
         ))
@@ -161,13 +175,7 @@ class GraphMapEnvV4(gym.Env):
 
     def _update_state(self):
         """
-        Updates:
-            self.neighbors
-            self.action_space
-            self.state
-            self.current_distance2goal
-            self.current_distance2neg
-        Uncomment self.action_space to update the neighbors if use MaskedSpace
+        Updates state
         """
 
         # forward neighbors
@@ -197,14 +205,16 @@ class GraphMapEnvV4(gym.Env):
             self.nx_shortest_path_length,
         ], dtype=np.float32)
 
-        nx_embeddings, length_embeddings = self._get_embeddings(
+        embeddings = self._get_embeddings(
             u=self.current, neighbors=self.neighbors)
 
         self.state = {
             "observations": np.hstack((
-                state,
-                nx_embeddings,
-                length_embeddings,
+                # state,
+                embeddings['nx_embeddings'],
+                embeddings['length_embeddings'],
+                embeddings['neg_embeddings'],
+                embeddings['goal_embeddings'],
                 self.embedding[self.current],
                 self.embedding[self.goal] - self.embedding[self.current],
             )),
@@ -229,7 +239,7 @@ class GraphMapEnvV4(gym.Env):
         self.envolving = config['envolving']
         self.envolving_freq = config['envolving_freq']
 
-        self.avoid_threshold = self.threshold / 7
+        self.avoid_threshold = self.threshold / 10
         self.number_of_nodes = self.graph.number_of_nodes()
 
         # load embeddings
@@ -246,20 +256,22 @@ class GraphMapEnvV4(gym.Env):
         """
         nx_embeddings = np.zeros(self.number_of_nodes)
         length_embeddings = np.zeros(self.number_of_nodes)
-        # speed_embeddings = np.zeros(self.number_of_nodes)
-        # travel_time_embeddings = np.zeros(self.number_of_nodes)
-        # grade_embeddings = np.zeros(self.number_of_nodes)
+        neg_embeddings = np.zeros(self.number_of_nodes)
+        goal_embeddings = np.zeros(self.number_of_nodes)
         for v in neighbors:
-            # speed_embeddings[v] = self.graph[u][v][0]['speed_kph']
-            # travel_time_embeddings[v] = self.graph[u][v][0]['travel_time']
-            # grade_embeddings[v] = self.graph[u][v][0]['grade']
-            # length_embeddings[v] = self.graph[u][v][0]['length']
             length_embeddings = self._get_nested_embeddings(v, length_embeddings, pre=u, weight='length', n=1)
+            neg_embeddings[v] = self._get_closest_distance_neg(self.nodes[v])
+            goal_embeddings[v] = self._great_circle_vec(self.nodes[v], self.goal_node)
 
         for idx, p in enumerate(self.reference_path):
             nx_embeddings[p] = idx
 
-        return nx_embeddings, length_embeddings
+        return dict(
+            nx_embeddings=nx_embeddings,
+            length_embeddings=length_embeddings,
+            neg_embeddings=neg_embeddings,
+            goal_embeddings=goal_embeddings
+        )
 
     def _get_nested_embeddings(self, u, embeddings, pre, weight, n=1):
         """
@@ -409,14 +421,14 @@ class GraphMapEnvV4(gym.Env):
 
         r2 = 1.0 if self.info['arrived'] else 0.0
         # r3 = r2 * self.tanh(self.path_length) # v0
-        r3 = r2 * (self.nx_shortest_path_length / self.path_length)  # v1
+        # r3 = r2 * (self.nx_shortest_path_length / self.path_length)  # v1
 
         if self.ref_idx > -1:
             r4 = self.reference_reward
         else:
             r4 = 0.0
 
-        return r2 + r3 + r4 + neg
+        return r2 + r4 + neg
 
     def step(self, action):
         """
@@ -541,7 +553,7 @@ class GraphMapEnvV4(gym.Env):
         self._reset_embeddings()
 
         self.get_default_route()
-        self.reference_reward = 1/len(self.nx_shortest_path)
+        self.reference_reward = 2/len(self.nx_shortest_path)
         self.reference_path = deepcopy(self.nx_shortest_path)
 
         self._update_state()

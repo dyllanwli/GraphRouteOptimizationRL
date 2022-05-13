@@ -6,7 +6,7 @@ import osmnx as ox
 import pandas as pd
 import gym
 from gym.spaces import Box, Discrete
-from gym_graph_map.envs.graph_map_env_v4 import GraphMapEnvV4 as GraphMapEnv
+from gym_graph_map.envs.graph_map_env_v5 import GraphMapEnvV5 as GraphMapEnv
 
 # model
 import ray
@@ -62,7 +62,7 @@ def create_policy_eval_video(env, trainer, filename="eval_video", num_episodes=2
 args = {
     'no_masking': False,
     'run': 'PPO',
-    'stop_iters': 2000,  # stop iters for each step
+    'stop_iters': 500,  # stop iters for each step
     'stop_timesteps': 1e+8,
     'stop_episode_reward_mean': 2.0,
     'train': True,
