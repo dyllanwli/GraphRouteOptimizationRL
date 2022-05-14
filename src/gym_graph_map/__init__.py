@@ -22,3 +22,7 @@ register(
         id = "graph-map-v5",
         entry_point="gym_graph_map.envs:GraphMapEnvV5"
         )
+register(
+        id = "graph-map-v6",
+        entry_point="gym_graph_map.envs:GraphMapEnvV6"
+        )

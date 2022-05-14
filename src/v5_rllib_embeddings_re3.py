@@ -62,7 +62,7 @@ def create_policy_eval_video(env, trainer, filename="eval_video", num_episodes=2
 args = {
     'no_masking': False,
     'run': 'PPO',
-    'stop_iters': 500,  # stop iters for each step
+    'stop_iters': 2000,  # stop iters for each step
     'stop_timesteps': 1e+8,
     'stop_episode_reward_mean': 2.0,
     'train': True,
@@ -114,7 +114,7 @@ if __name__ == "__main__":
         "framework": args['framework'],
         "num_gpus": 0,
         "num_cpus_per_worker": 10,
-        "num_envs_per_worker": 1,
+        "num_envs_per_worker": 2,
         "simple_optimizer": True,
         # "num_sgd_iter": 30, # Can not be tuned...
         # "sgd_minibatch_size": 128,
@@ -160,7 +160,7 @@ if __name__ == "__main__":
     if args['wandb']:
         cb = [WandbLoggerCallback(
             project="graph_map_ray",
-            group="ppo_cur_nx_8",
+            group="ac_cur_nx_8",
             excludes=["perf"],
             log_config=False)]
     else:
