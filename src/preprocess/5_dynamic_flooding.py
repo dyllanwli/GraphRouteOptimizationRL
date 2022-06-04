@@ -13,12 +13,14 @@ graph_path = repo_path + "datasets/osmnx/houston_tx_usa_drive_20000_slope.graphm
 print("Loading graph", graph_path)
 G = ox.load_graphml(graph_path)
 
-
 def remove_isolated_nodes(G):
     nG = deepcopy(G)
     for x in G.nodes():
         if len(list(G.neighbors(x))) == 0:
             print("Node {} has no neighbors".format(x))
+            nG.remove_node(x)
+        if len(list(G.neighbors(x))) > 4:
+            print("Node {} has more than 4 neighbors".format(x))
             nG.remove_node(x)
     # checking
     for x in nG.nodes():

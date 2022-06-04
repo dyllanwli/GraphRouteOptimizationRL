@@ -13,10 +13,8 @@ import ray
 from ray import tune
 
 
-from ray.rllib.agents import a3c
+from ray.rllib.agents import ppo
 from ray_models.models import ActionMaskModel, TorchActionMaskModel
-from ray.rllib.agents.callbacks import RE3UpdateCallbacks
-
 # tune
 from ray.tune.integration.wandb import WandbLoggerCallback
 # from ray.tune.suggest.hyperopt import HyperOptSearch
@@ -61,11 +59,10 @@ def create_policy_eval_video(env, trainer, filename="eval_video", num_episodes=2
         env.close()
     return filename
 
-
 args = {
     'no_masking': False,
-    'run': 'A3C',
-    'stop_iters': 500,  # stop iters for each step
+    'run': 'PPO',
+    'stop_iters': 2000,  # stop iters for each step
     'stop_timesteps': 1e+8,
     'stop_episode_reward_mean': 2.0,
     'train': True,
@@ -91,8 +88,8 @@ if __name__ == "__main__":
         'threshold': 2900,
         'nblock': 2,
         'embedding_path': embedding_dir + "houston_tx_usa_drive_2000_slope_node2vec.npy",
-        'envolving': False,  # neg envolving
-        'envolving_freq': 50,  # every nth step
+        'envolving': False, # neg envolving
+        'envolving_freq': 50, # every nth step
     }
     config = {
         "env": GraphMapEnv,
@@ -112,46 +109,43 @@ if __name__ == "__main__":
                 "no_masking": args['no_masking']
             }
         },
-        "lambda": 1.0,
+        "lambda": 0.9,
         "horizon": 2000,  # max steps per episode
         "framework": args['framework'],
         "num_gpus": 0,
-        "num_cpus_per_worker": 2,
-        "num_envs_per_worker": 1,
-        "num_workers": 5,  # 0 for curiosity
-
+        "num_cpus_per_worker": 10,
+        "num_envs_per_worker": 2,
+        "simple_optimizer": True,
+        # "num_sgd_iter": 30, # Can not be tuned...
+        # "sgd_minibatch_size": 128,
+        "num_workers": 0,  # 0 for curiosity
+        # For production workloads, set eager_tracing=True ; to match the speed of tf-static-graph (framework='tf'). For debugging purposes, `eager_tracing=False` is the best choice.
         "eager_tracing": True,
         "eager_max_retraces": None,
         "log_level": 'ERROR',
-        "lr": 0.0005,  # 0.0003 or 0.0005
-        # exploration settings below
-        "seed": 42,
-        "callbacks": RE3UpdateCallbacks,
+        "lr": 0.0005,  # 0.0003 or 0.0005 seem to work fine as well.
         'exploration_config': {
-            "type": "RE3",
-            # the dimensionality of the observation embedding vectors in latent space.
-            "embeds_dim": 128,
-            "rho": 0.1,  # Beta decay factor, used for on-policy algorithm.
-            # Number of neighbours to set for K-NN entropy estimation.
-            "k_nn": 50,
-            # Configuration for the encoder network, producing embedding vectors from observations.
-            # This can be used to configure fcnet- or conv_net setups to properly process any
-            # observation space. By default uses the Policy model configuration.
-            "encoder_net_config": {
+            "type": "Curiosity",
+            # tune.grid_search([1.0, 0.5, 0.1]),  # curiosity
+            "eta": 0.5,
+            "beta": 0.5,  # tune.grid_search([0.7, 0.5, 0.1]),
+            "feature_dim": 256,  # curiosity
+            # No actual feature net: map directly from observations to feature vector (linearly).
+            # Hidden layers of the "inverse" model.
+            "inverse_net_hiddens": [256, 512, 256],
+            # Activation of the "inverse" model.
+            "inverse_net_activation": "relu",
+            # Hidden layers of the "forward" model.
+            "forward_net_hiddens": [256, 512, 256],
+            # Activation of the "forward" model.
+            "forward_net_activation": "relu",
+            "feature_net_config": {  # curiosity
                 "fcnet_hiddens": [256, 512, 256],
                 "fcnet_activation": "relu",
             },
-            # Hyperparameter to choose between exploration and exploitation. A higher value of beta adds
-            # more importance to the intrinsic reward, as per the following equation
-            # `reward = r + beta * intrinsic_reward`
-            "beta": 0.5,
-            # Schedule to use for beta decay, one of constant" or "linear_decay".
-            "beta_schedule": 'linear_decay',
-            # Specify, which exploration sub-type to use (usually, the algo's "default"
-            # exploration, e.g. EpsilonGreedy for DQN, StochasticSampling for PG/SAC).
             "sub_exploration": {
-                "type": "StochasticSampling",
-            }
+                "type": "StochasticSampling",  # default exploration
+            },
         }
     }
 
@@ -166,7 +160,7 @@ if __name__ == "__main__":
     if args['wandb']:
         cb = [WandbLoggerCallback(
             project="graph_map_ray",
-            group="ac_cur_nx_8",
+            group="ac_cur_nx_9",
             excludes=["perf"],
             log_config=False)]
     else:
@@ -196,8 +190,8 @@ if __name__ == "__main__":
     # ppo_config.update(config)
     # config['num_workers'] = 0
     config['num_envs_per_worker'] = 1
-    trainer = a3c.A3CTrainer(config=config, env=GraphMapEnv)
-
+    trainer = ppo.PPOTrainer(config=config, env=GraphMapEnv)
+    # trainer = ppo.APPOTrainer(config=config, env=GraphMapEnv)
     trainer.restore(checkpoint_path)
     env = GraphMapEnv(config["env_config"])
     print("run one iteration until arrived and render")

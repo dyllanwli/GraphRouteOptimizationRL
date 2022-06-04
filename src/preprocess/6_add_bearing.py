@@ -15,6 +15,9 @@ G = ox.load_graphml(graph_path)
 
 G = ox.add_edge_bearings(G)
 
+
+# deprecated features below
+
 directions = ("North", "Northeast", "East", "Southeast", "South", "Southwest", "West", "Northwest")
 reverse_directions_dict = {i: d for i, d in enumerate(directions)}
 directions_dict = {d: i for i, d in enumerate(directions)}

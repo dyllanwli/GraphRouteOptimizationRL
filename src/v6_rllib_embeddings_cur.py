@@ -6,7 +6,7 @@ import osmnx as ox
 import pandas as pd
 import gym
 from gym.spaces import Box, Discrete
-from gym_graph_map.envs.graph_map_env_v5 import GraphMapEnvV5 as GraphMapEnv
+from gym_graph_map.envs.graph_map_env_v6 import GraphMapEnvV6 as GraphMapEnv
 
 # model
 import ray
@@ -59,6 +59,7 @@ def create_policy_eval_video(env, trainer, filename="eval_video", num_episodes=2
         env.close()
     return filename
 
+
 args = {
     'no_masking': False,
     'run': 'PPO',
@@ -70,12 +71,13 @@ args = {
     'wandb': True,
     'framework': 'tf2',
     'resume_name': '',
+    'verbose': 0,
 }
 
 if __name__ == "__main__":
     # Init Ray in local mode for easier debugging.
     ray.init(local_mode=True, include_dashboard=False)
-    graph_path = graph_dir + "houston_tx_usa_drive_2000_slope.graphml"
+    graph_path = graph_dir + "houston_tx_usa_drive_20000_slope.graphml"
 
     G = ox.load_graphml(graph_path)
     print("Loaded graph")
@@ -83,13 +85,16 @@ if __name__ == "__main__":
         'graph': G,
         'verbose': False,
         'neg_df_path': repo_path + "datasets/tx_flood.csv",
-        'center_node': (29.764050, -95.393030),  # sample
-        # 'center_node': (29.72346214336903, -95.38599726549226), # houston
-        'threshold': 2900,
-        'nblock': 2,
-        'embedding_path': embedding_dir + "houston_tx_usa_drive_2000_slope_node2vec.npy",
-        'envolving': False, # neg envolving
-        'envolving_freq': 50, # every nth step
+        # 'center_node': (29.764050, -95.393030),  # sample
+        # houston large
+        'center_node': (29.72346214336903, -95.38599726549226),
+        'threshold': 20000,
+        'nblock': 4,
+        "avoid_threshold": 300,
+        'init_envolving': 100,
+        'embedding_path': embedding_dir + "houston_tx_usa_drive_20000_slope_node2vec.npy",
+        'envolving': True,  # neg envolving
+        'envolving_freq': 500,  # every nth step
     }
     config = {
         "env": GraphMapEnv,
@@ -109,16 +114,13 @@ if __name__ == "__main__":
                 "no_masking": args['no_masking']
             }
         },
-        "lambda": 0.9,
-        "horizon": 2000,  # max steps per episode
+        "lambda": 0.999,
+        "horizon": 500,  # max steps per episode
         "framework": args['framework'],
         "num_gpus": 0,
-        "num_cpus_per_worker": 10,
-        "num_envs_per_worker": 2,
-        "simple_optimizer": True,
-        # "num_sgd_iter": 30, # Can not be tuned...
-        # "sgd_minibatch_size": 128,
-        "num_workers": 0,  # 0 for curiosity
+        "num_cpus_per_worker": 4,
+        "num_envs_per_worker": 1,
+        "num_workers": 2,  # 0 for curiosity
         # For production workloads, set eager_tracing=True ; to match the speed of tf-static-graph (framework='tf'). For debugging purposes, `eager_tracing=False` is the best choice.
         "eager_tracing": True,
         "eager_max_retraces": None,
@@ -160,7 +162,7 @@ if __name__ == "__main__":
     if args['wandb']:
         cb = [WandbLoggerCallback(
             project="graph_map_ray",
-            group="ac_cur_nx_8",
+            group="ac_cur_nx_9",
             excludes=["perf"],
             log_config=False)]
     else:
@@ -168,10 +170,10 @@ if __name__ == "__main__":
 
     if args['train']:
         if args['resume_name'] != "":
-            results = tune.run(args['run'], stop=stop, verbose=0, callbacks=cb, keep_checkpoints_num=1,
+            results = tune.run(args['run'], stop=stop, verbose=args['verbose'], callbacks=cb, keep_checkpoints_num=1,
                                checkpoint_at_end=True, resume=True, name=args['resume_name'])
         else:
-            results = tune.run(args['run'], config=config, stop=stop, verbose=0, callbacks=cb,
+            results = tune.run(args['run'], config=config, stop=stop, verbose=args['verbose'], callbacks=cb,
                                keep_checkpoints_num=1, checkpoint_at_end=True,
                                # search_alg=hyperopt_search,
                                )
