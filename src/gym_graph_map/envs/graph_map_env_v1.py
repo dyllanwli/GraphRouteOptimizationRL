@@ -193,14 +193,6 @@ class GraphMapEnvV1(gym.Env):
     def _reward(self):
         """
         Computes the reward
-        neg_factor range: [-inf, 1.0] the closer to the negative point, the less the overall reward
-        r1 range: [0, 1.0] the more the steps, the less the r1, this effect will be even more stronger when the steps are close to EP_LENGTH
-        r2 range: {0.0, 1.0} if reached the goal, the r2 is 1.0 else 0.0
-        r3 range: [0.0, 1.0] if reached the goal, the r3 will caculate the path length with sigmoid function, 
-            the sigmod funtion is constructed by the self.threshold, if the path length is less than the threshold, the r3 is less than 0.5 else greater than 0.5
-        TODO: add r4
-        r5 range: [0, 1.0] the closer to the goal the higher the r5 for each step
-        TODO: consider eposide reward
         """
         neg_factor = 1.0
         closest_dist = self.avoid_threshold

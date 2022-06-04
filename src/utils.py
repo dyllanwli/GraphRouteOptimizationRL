@@ -1,7 +1,7 @@
 from collections import namedtuple, Counter
 import numpy as np
 import networkx as nx
-from geopy.distance import great_circle
+# from geopy.distance import great_circle
 import plotly.graph_objects as go
 
 # hyperparameters

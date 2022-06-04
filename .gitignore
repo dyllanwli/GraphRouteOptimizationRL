@@ -19,3 +19,6 @@ src/ray_models/__pycache__/*
 datasets/embeddings/*.npy
 datasets/osmnx/houston_tx_usa_drive_20000_slope.graphml
 src/test.ipynb
+images/eval_video.gif
+images/output.png
+images/output2.png

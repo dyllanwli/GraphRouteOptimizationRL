@@ -285,19 +285,6 @@ class GraphMapEnvV3(gym.Env):
     def _reward(self):
         """
         Computes the reward
-        Overall reward, [-inf, 3.0]
-        neg: [-inf, 0.0]: when closest_dist >= self.avoid_threshold, neg = 0.0; when closest_dist / self.avoid_threshold == 0.5, neg = -1
-            the closer the node is to the negative point, the less the reward
-        r2: {0.0, 1.0} (comfired) if reached the goal, the r2 is 1.0 else 0.0
-        r3_v1: [0.0, 1.1] (comfired) if reached the goal, the r3 will caculate the path length with simple ratio
-        r4: cumulative reward, [0.0, 0.001]. It aims to reward the agent who follow the references
-
-        r5 range: [0, 1.0] (deprecated) the closer to the goal the higher the r5 for each done
-
-        r3_v0: [0.0, 1.0] (deprecated) if reached the goal, the r3 will caculate the path length with sigmoid function,
-            if aims to reward the shorter path, the sigmod funtion is constructed by the self.threshold,
-            if the path length is less than the threshold the r3 is greater than 0.5 else less than 0.5
-            r3_v0 deprecated because of overflow encountered inreduct issues in using sigmod and tanh
         """
         # too close to a negative point will cause a negative reward
         neg = min(

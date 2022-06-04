@@ -1,5 +1,5 @@
 # GraphRouteOptimizationRL
-Not finished yet, stay tune. 
+Some feature not finished yet, stay tune. 
 # demo
 
 ![demo images](images/example/eval_video.gif)
