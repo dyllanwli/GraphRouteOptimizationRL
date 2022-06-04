@@ -28,13 +28,12 @@ from gym import spaces
 from gym.utils import seeding
 
 repo_path = str(Path.home()) + "/dev/GraphRouteOptimizationRL/"
-directions = ("North", "Northeast", "East", "Southeast",
-              "South", "Southwest", "West", "Northwest")
+directions = ("Turn Left", "Proceed", "Turn Right", "Turn Back")
 reverse_directions_dict = {i: d for i, d in enumerate(directions)}
 directions_dict = {d: i for i, d in enumerate(directions)}
 
 
-class GraphMapEnvV6(gym.Env):
+class GraphMapEnvV7(gym.Env):
     """
     Custom Environment that follows gym interface
     V2 is the version that uses the compatible with rllib
@@ -88,7 +87,7 @@ class GraphMapEnvV6(gym.Env):
 
         self.adj_shape = (self.number_of_nodes, self.number_of_nodes)
 
-        self.action_space = spaces.Discrete(8)
+        self.action_space = spaces.Discrete(3)
         self.graph_space = spaces.Discrete(self.number_of_nodes)
 
         # set observation space low
@@ -208,18 +207,21 @@ class GraphMapEnvV6(gym.Env):
         # utility values
         self.render_img_path = repo_path + "images/render_img.png"
 
+    def _get_direction(self):
+        """
+        Gets the direction
+        """
+
     def _get_direction_bearing(self, u, v):
         bearing = calculate_bearing(
             self.nodes[u]['y'], self.nodes[u]['x'], self.nodes[v]['y'], self.nodes[v]['x'])
-        direction = get_direction(bearing)
+        direction = self._get_direction(bearing)
         return bearing, direction
 
     def _check_edges(self, direction):
         if direction not in self.avail_directions:
             u, v = self.current, self.reference_path[0]
             self.graph.add_edge(u, v)
-            self.graph.edges[u, v, 0].update({'osmid': np.random.randint(99999999, 199999999), 'oneway': True, 'lanes': '3', 'name': 'dummy road', 'highway': 'primary',
-                                              'length': 64.304, 'speed_kph': 64.9, 'travel_time': 3.6, 'grade': 0.01555, 'grade_abs': 0.01555, 'bearing': 42.3, 'direction': direction})
             self.avail_directions[direction] = v
 
     def _get_observation_embeddings(self, observation_set, u):
@@ -347,6 +349,9 @@ class GraphMapEnvV6(gym.Env):
         self.travel_time += ox.utils_graph.get_route_edge_attributes(
             self.graph, self.path[-2:], "travel_time")[0]
 
+        self.current_bearing = calculate_bearing(
+            self.nodes[self.path[-2]], self.nodes[self.path[-1]])
+
         self.ref_idx = index_finder(self.reference_path, self.current)
         if self.ref_idx > -1:
             self.reference_path = self.reference_path[self.ref_idx + 1:]
@@ -371,7 +376,8 @@ class GraphMapEnvV6(gym.Env):
         Envolving
         """
         while self.init_envolving > 0:
-            envolving_node = self.graph.nodes[np.random.choice(self.number_of_nodes)]
+            envolving_node = self.graph.nodes[np.random.choice(
+                self.number_of_nodes)]
 
             node = {'y': envolving_node['y'],
                     'x': envolving_node['x'], 'weight': 5}
@@ -386,9 +392,12 @@ class GraphMapEnvV6(gym.Env):
             d2 = 0
             while d1 < self.avoid_threshold + 300 or d2 < self.avoid_threshold + 300:
                 # choose the node until the distance is greater than the threshold
-                envolving_node = self.graph.nodes[np.random.choice(self.number_of_nodes)]
-                d1 = self._great_circle_vec(self.nodes[self.goal], envolving_node)
-                d2 = self._great_circle_vec(self.nodes[self.origin], envolving_node)
+                envolving_node = self.graph.nodes[np.random.choice(
+                    self.number_of_nodes)]
+                d1 = self._great_circle_vec(
+                    self.nodes[self.goal], envolving_node)
+                d2 = self._great_circle_vec(
+                    self.nodes[self.origin], envolving_node)
 
             node = {'y': envolving_node['y'],
                     'x': envolving_node['x'], 'weight': 5}
@@ -496,7 +505,7 @@ class GraphMapEnvV6(gym.Env):
             print("self.path:", self.path)
 
         self._update_attributes()
-        
+
         self.info['arrived'] = self.current == self.goal
         if self.info['arrived'] or self.reference_path == []:
             return self.state, 3 - self.reward, True, self.info
@@ -569,6 +578,7 @@ class GraphMapEnvV6(gym.Env):
         self.current_step = 0
         self.done = False
         self.path = [self.current]
+        self.current_bearing = None
         self.path_length = 0.0
         self.travel_time = 0.0
         self.neighbors = []
@@ -599,8 +609,29 @@ class GraphMapEnvV6(gym.Env):
         Returns:
             action_mask: [1, 0, ...]
         """
-        self.avail_directions = {int(data['direction']): v for u, v,
-                                 data in self.graph.edges(self.current, data=True)}
+        self.avail_bearing = {data['bearing']: v for u, v,
+                              data in self.graph.edges(self.current, data=True)}
+        abk = sorted(list(self.avail_bearing.keys()))
+
+        if len(abk) == 3:
+            self.avail_directions = {0: self.avail_bearing[abk[0]],
+                                     1: self.avail_bearing[abk[1]],
+                                     2: self.avail_bearing[abk[2]]}
+        elif len(abk) == 2:
+            if self.avail_bearing[abk[0]] >= self.current_bearing:
+                self.avail_directions = {1: self.avail_bearing[abk[0]],
+                                         2: self.avail_bearing[abk[1]]}
+            elif self.avail_bearing[abk[1]] <= self.current_bearing:
+                self.avail_directions = {0: self.avail_bearing[abk[0]],
+                                         1: self.avail_bearing[abk[1]]}
+            else:
+                self.avail_directions = {0: self.avail_bearing[abk[0]],
+                                         2: self.avail_bearing[abk[1]]}
+        elif len(abk) == 1:
+            self.avail_directions = {0: self.avail_bearing[abk[0]]}
+        else:
+            self.avail_directions = {}
+
         self.mask = np.isin(range(self.action_space.n), list(
             self.avail_directions.keys()), assume_unique=True).astype(np.int64)
         return self.mask
@@ -687,28 +718,6 @@ def calculate_bearing(lat1, lng1, lat2, lng2):
 
     # normalize to 0-360 degrees to get compass bearing
     return initial_bearing % 360
-
-
-def get_direction(bearing):
-    if bearing >= 337.5 or bearing < 22.5:
-        return directions_dict["North"]
-    elif bearing >= 22.5 and bearing < 67.5:
-        return directions_dict["Northeast"]
-    elif bearing >= 67.5 and bearing < 112.5:
-        return directions_dict["East"]
-    elif bearing >= 112.5 and bearing < 157.5:
-        return directions_dict["Southeast"]
-    elif bearing >= 157.5 and bearing < 202.5:
-        return directions_dict["South"]
-    elif bearing >= 202.5 and bearing < 247.5:
-        return directions_dict["Southwest"]
-    elif bearing >= 247.5 and bearing < 292.5:
-        return directions_dict["West"]
-    elif bearing >= 292.5 and bearing < 337.5:
-        return directions_dict["Northwest"]
-    else:
-        raise ValueError(
-            "Bearing {} is not in the range [0, 360]".format(bearing))
 
 
 def get_observation(u, G, size=10, return_subgraph=False):

@@ -239,7 +239,7 @@ class GraphMapEnvV5(gym.Env):
         self.envolving = config['envolving']
         self.envolving_freq = config['envolving_freq']
 
-        self.avoid_threshold = self.threshold / 10
+        self.avoid_threshold = 300
         self.number_of_nodes = self.graph.number_of_nodes()
 
         # load embeddings
