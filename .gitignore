@@ -22,3 +22,4 @@ src/test.ipynb
 images/eval_video.gif
 images/output.png
 images/output2.png
+datasets/osmnx/nyc_usa_drive_20000_slope.graphml

@@ -10,9 +10,9 @@ from copy import deepcopy
 repo_path = str(Path.home()) + "/dev/GraphRouteOptimizationRL/"
 
 graph_path = repo_path + \
-    "datasets/osmnx/houston_tx_usa_drive_20000_no_isolated_nodes.graphml"
-output = repo_path + "datasets/osmnx/houston_tx_usa_drive_20000_slope.graphml"
-image_output = repo_path + "images/houston_tx_usa_drive_20000_slope.png"
+    "datasets/osmnx/houston_tx_usa_drive_2000_no_isolated_nodes.graphml"
+output = repo_path + "datasets/osmnx/houston_tx_usa_drive_2000_slope_tmp.graphml"
+image_output = repo_path + "images/houston_tx_usa_drive_2000_slope_tmp.png"
 G = ox.load_graphml(graph_path)
 
 print("Loaded graph")
