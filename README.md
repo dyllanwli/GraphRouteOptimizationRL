@@ -1,5 +1,4 @@
 # GraphRouteOptimizationRL
-Some feature not finished yet, stay tune. 
 # demo
 
 ![demo images](images/example/eval_video.gif)
@@ -12,6 +11,10 @@ Some feature not finished yet, stay tune.
   - https://arxiv.org/pdf/1711.09883.pdf
 + https://www.proquest.com/docview/2541954632?pq-origsite=gscholar&fromopenview=true
 
+# Data:
+```
+datasets
+```
 
 # Steps:
 
