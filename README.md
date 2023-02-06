@@ -11,3 +11,12 @@ Some feature not finished yet, stay tune.
 + https://github.com/deepmind/ai-safety-gridworlds | AI saftly navigation 
   - https://arxiv.org/pdf/1711.09883.pdf
 + https://www.proquest.com/docview/2541954632?pq-origsite=gscholar&fromopenview=true
+
+
+# Steps:
+
+```
+pip install -r requirements.txt
+cd src;
+python rllib_embeddings_ppo_re3.py
+```
