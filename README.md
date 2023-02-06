@@ -20,6 +20,4 @@ datasets
 
 ```
 pip install -r requirements.txt
-cd src;
-python rllib_embeddings_ppo_re3.py
 ```
